@@ -47,6 +47,23 @@ CSV-sourced sales is answered downstream by joining
 falling inside `[valid_from, valid_to]`), not by carrying a rate in the file
 itself.
 
+## Phase 3 — third-party universe and gap days
+
+Third-party resellers' events and customers are generated as their own
+namespace (`TP-EVT-######`, `TP-CUST-######`) — never the B2B DB's own
+`event_id`/`customer_id` space — reflecting that these belong to an
+external reseller's system, not the platform. `RESELLER_ID` and
+`RESELLER_NAME` in the files are the real values from `data/source/b2b.db`
+so the R3 join works. Each third-party reseller files on ~70% of days
+(`FILE_PROBABILITY`), so gaps are the norm, not the exception — ingestion
+must not treat a missing day as an error.
+
+Verified manually (see commit history): joining
+`raw_reseller.daily_sales.reseller_id` / `sale_date` to
+`partnership_agreements(reseller_id, valid_from, valid_to)` resolves a
+commission rate for effectively every valid CSV row (1390/1391 rows in a
+20-file sample; the one miss was a deliberately injected defect row).
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`
