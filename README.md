@@ -35,6 +35,8 @@ work, and how do I know" without reading logs.
 **Prerequisites:** a reachable SQL Server instance, ODBC Driver 17 for SQL
 Server, Python 3.11.
 
+### macOS / Linux / WSL / Git Bash
+
 ```bash
 cp .env.example .env            # fill in MSSQL_SERVER / credentials
 pip install -r requirements.txt
@@ -48,6 +50,56 @@ Then verify:
 ```bash
 make dq                         # Great Expectations against the raw layer
 ```
+
+### Windows / PowerShell
+
+`make` isn't a native PowerShell command — the `Makefile` targets are thin
+wrappers around `python -m ...` calls, so run those directly instead. `copy`
+replaces `cp`; everything else is identical:
+
+```powershell
+copy .env.example .env          # fill in MSSQL_SERVER / credentials
+pip install -r requirements.txt
+python -m src.common.init_db                                     # make init-db
+python -m src.generators.generate_b2b                             # make gen-b2b
+python -m src.generators.generate_reseller_files                  # make gen-files
+python -m src.ingestion.runner --mode full --sources b2b,reseller  # make ingest-full
+```
+
+Then verify:
+
+```powershell
+python -m src.quality.run_validations   # make dq
+```
+
+Every other `make <target>` in this README has a direct equivalent:
+
+| `make` target | PowerShell / direct command |
+|---|---|
+| `make init-db` | `python -m src.common.init_db` |
+| `make gen-b2b` | `python -m src.generators.generate_b2b` |
+| `make mutate-b2b` | `python -m src.generators.mutate_b2b` |
+| `make gen-files` | `python -m src.generators.generate_reseller_files` |
+| `make gen-files-delta` | `python -m src.generators.generate_reseller_files --delta` |
+| `make ingest-full` | `python -m src.ingestion.runner --mode full --sources b2b,reseller` |
+| `make ingest-incr` | `python -m src.ingestion.runner --mode incremental --sources b2b,reseller` |
+| `make dq` | `python -m src.quality.run_validations` |
+| `make reset` | `python -m src.common.reset_db` |
+| `make test` | `python -m pytest tests/ -v` |
+
+If you'd rather keep using `make` itself on Windows: install it via
+`choco install make` (admin PowerShell, requires [Chocolatey](https://chocolatey.org/)),
+use Git Bash (ships with Git for Windows, sometimes includes `make`
+depending on install options), or work from inside WSL (`wsl --install`)
+where `make` is native — any of these make the `bash` commands above work
+unmodified.
+
+**Windows-specific gotcha:** `pyodbc` needs the actual **ODBC Driver 17 for
+SQL Server** installed system-wide (a separate Microsoft installer, not the
+`pip install pyodbc` package). If it's missing, `python -c "import pyodbc;
+print(pyodbc.drivers())"` prints `[]` and every command above fails at the
+connection step — install the driver first, per Phase 1's own acceptance
+criterion.
 
 ## Architecture
 
