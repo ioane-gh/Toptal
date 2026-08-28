@@ -3,6 +3,10 @@
 -- `id` is a technical surrogate PK (nonclustered); the clustered index the
 -- spec asks for sits on (_source_file_name, _source_row_number), which is
 -- how the table is actually queried and re-loaded per file.
+--
+-- No customer_* columns -- removed along with raw_b2b.customers (see
+-- NOTES.md "Removing organizers and customers"); the CSV contract
+-- (config/reseller_file_schema.yaml) never carried them either.
 
 IF OBJECT_ID('raw_reseller.daily_sales', 'U') IS NULL
 CREATE TABLE raw_reseller.daily_sales (
@@ -25,10 +29,6 @@ CREATE TABLE raw_reseller.daily_sales (
     currency            NVARCHAR(255) NULL,
     sale_date           NVARCHAR(255) NULL,
     sale_channel        NVARCHAR(255) NULL,
-    customer_id         NVARCHAR(255) NULL,
-    customer_email      NVARCHAR(255) NULL,
-    customer_country    NVARCHAR(255) NULL,
-    customer_city       NVARCHAR(255) NULL,
     reseller_id         NVARCHAR(255) NULL,
     reseller_name       NVARCHAR(255) NULL,
     order_status        NVARCHAR(255) NULL,

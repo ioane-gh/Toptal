@@ -4,9 +4,12 @@ truth for column layout, and data/source/b2b.db for the real third-party
 reseller_id/name pairs so RESELLER_ID in the files joins to
 partnership_agreements downstream (see NOTES.md, R3).
 
-Events and customers inside the files are NOT the B2B DB's -- they belong to
-the third-party system -- but use the same event-type and region vocabulary
-so reports read consistently across both sources.
+Events inside the files are NOT the B2B DB's -- they belong to the
+third-party system -- but use the same event-type and region vocabulary so
+reports read consistently across both sources. There is no customer data in
+the contract at all (see NOTES.md "Removing organizers and customers") --
+neither the B2B nor the reseller side carries it, since no report
+requirement reads a customer attribute.
 
 Deliberate defects (config generation.defects) are injected at configured
 rates and each type is guaranteed to occur at least once. A few fully
@@ -55,10 +58,9 @@ def load_third_party_resellers(settings: Settings) -> list[tuple[int, str]]:
 @dataclass
 class ThirdPartyUniverse:
     events: list[dict]  # EVENT_ID, EVENT_NAME, EVENT_TYPE, VENUE_*
-    customers: list[dict]  # CUSTOMER_ID, CUSTOMER_EMAIL, CUSTOMER_COUNTRY, CUSTOMER_CITY
 
 
-def build_universe(rng: random.Random, fake: Faker, schema: dict, n_events: int, n_customers: int) -> ThirdPartyUniverse:
+def build_universe(rng: random.Random, fake: Faker, schema: dict, n_events: int) -> ThirdPartyUniverse:
     events = []
     for i in range(1, n_events + 1):
         events.append(
@@ -72,17 +74,7 @@ def build_universe(rng: random.Random, fake: Faker, schema: dict, n_events: int,
                 "VENUE_COUNTRY": fake.country_code(),
             }
         )
-    customers = []
-    for i in range(1, n_customers + 1):
-        customers.append(
-            {
-                "CUSTOMER_ID": f"TP-CUST-{i:06d}",
-                "CUSTOMER_EMAIL": fake.email(),
-                "CUSTOMER_COUNTRY": fake.country_code(),
-                "CUSTOMER_CITY": fake.city(),
-            }
-        )
-    return ThirdPartyUniverse(events=events, customers=customers)
+    return ThirdPartyUniverse(events=events)
 
 
 TICKET_TYPE_NAMES = ["General Admission", "VIP", "Early Bird", "Premium", "Standing"]
@@ -90,7 +82,6 @@ TICKET_TYPE_NAMES = ["General Admission", "VIP", "Early Bird", "Premium", "Stand
 
 def gen_row(rng: random.Random, fake: Faker, schema: dict, universe: ThirdPartyUniverse, reseller_id: int, reseller_name: str, sale_date: date, ticket_seq: int) -> dict:
     event = rng.choice(universe.events)
-    customer = rng.choice(universe.customers)
     quantity = rng.randint(1, 6)
     unit_price = round(rng.uniform(15.0, 250.0), 2)
     total_amount = round(unit_price * quantity, 2)
@@ -115,10 +106,6 @@ def gen_row(rng: random.Random, fake: Faker, schema: dict, universe: ThirdPartyU
         "CURRENCY": rng.choice(schema["allowed_currencies"]),
         "SALE_DATE": sale_dt.strftime("%Y-%m-%d %H:%M:%S"),
         "SALE_CHANNEL": rng.choice(["ON_SITE", "WEB", "MOBILE_APP", "PARTNER_API", "BOX_OFFICE"]),
-        "CUSTOMER_ID": customer["CUSTOMER_ID"],
-        "CUSTOMER_EMAIL": customer["CUSTOMER_EMAIL"],
-        "CUSTOMER_COUNTRY": customer["CUSTOMER_COUNTRY"],
-        "CUSTOMER_CITY": customer["CUSTOMER_CITY"],
         "RESELLER_ID": str(reseller_id),
         "RESELLER_NAME": reseller_name,
         "ORDER_STATUS": rng.choices(schema["allowed_order_status"], weights=[0.85, 0.10, 0.05], k=1)[0],
@@ -227,8 +214,7 @@ def generate(settings: Settings, delta: bool) -> None:
 
     vol = settings.profile_volumes
     n_events = max(20, vol["events"] // 5)
-    n_customers = max(50, vol["customers"] // 20)
-    universe = build_universe(rng, fake, schema, n_events, n_customers)
+    universe = build_universe(rng, fake, schema, n_events)
 
     out_dir = settings.path("reseller_dir")
     out_dir.mkdir(parents=True, exist_ok=True)
