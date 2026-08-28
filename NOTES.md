@@ -102,6 +102,48 @@ One `meta.ingestion_job` row is written per **file** (not one per reseller
 or one for the whole reseller source) -- source_object = the file name --
 which gives the same fine-grained traceability Phase 5 gets per table.
 
+## Phase 7 — Great Expectations API verification and design notes
+
+The installed version is `great_expectations==1.21.0` (pinned range
+`>=1.3,<2` per the spec). Its fluent 1.x API was exercised interactively
+against a scratch SQLite database standing in for SQL Server (GX's
+`add_table_asset`/`add_query_asset` eagerly test the connection, so this
+was the only way to verify it without a live instance -- see "Build
+environment" above) before being written into `src/quality/`:
+`ctx.data_sources.add_sql(connection_string=...)`, `add_table_asset` /
+`add_query_asset`, `add_batch_definition_whole_table`, `gx.ExpectationSuite`
++ `add_expectation(..., meta={"severity": ...})`, `gx.ValidationDefinition`,
+`gx.Checkpoint`, and `checkpoint.run()` whose per-expectation results expose
+`.success`, `.expectation_config.type/.kwargs/.meta`, and `.result` (with
+`unexpected_count` etc). A full mimic run (fake orders/order_items/
+daily_sales tables with a deliberately negative `total_amount`, an orphaned
+`order_item`, and a duplicate `(_source_file_name, _source_row_number)`)
+correctly failed exactly those three expectations and passed the rest,
+confirming the whole checkpoint-to-`meta.data_quality_result` pipeline
+before it could be tried against the real target. `tests/test_run_validations.py`
+carries this as a live (skip-guarded) test since it needs schema-qualified
+tables GX's fluent API doesn't support against SQLite.
+
+**The "no orphans" and "known reseller_id" checks aren't single-table
+column expectations**, so they don't fit inside `raw_b2b_order_items`'s or
+`raw_reseller_daily_sales`'s own suite object:
+- Orphan `order_items` (no matching `orders.order_id`) is implemented as its
+  own query asset (`order_items LEFT JOIN orders WHERE orders.order_id IS
+  NULL`) validated with `ExpectTableRowCountToBeBetween(max_value=0)`, under
+  its own suite name `raw_b2b_order_items_orphan_check` -- GX suites are
+  keyed uniquely by name, so it can't share `raw_b2b_order_items`'s name.
+  `meta.data_quality_result` therefore has four suite_names, not three; the
+  three from the spec are still all present and independently queryable.
+- `_file_reseller_id matches a known reseller` **is** expressible as a
+  plain `ExpectColumnValuesToBeInSet`, so it stays inside
+  `raw_reseller_daily_sales`'s own suite -- the allowed set is just fetched
+  from `raw_b2b.resellers` at suite-build time rather than hardcoded.
+
+`raw_b2b_orders`'s `order_ts` range check upper-bounds at "tomorrow", not
+the static `generation.date_range.end` (2020-12-31): `mutate_b2b.py` and
+incremental loads add orders dated at generation time, which are legitimately
+outside the historical range.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`
