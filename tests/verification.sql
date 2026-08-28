@@ -11,13 +11,11 @@
 --    and diff by hand against the counts below -- SQL Server and SQLite
 --    can't be queried in one statement.)
 -- ============================================================
-SELECT 'organizers' AS tbl, COUNT(*) AS raw_b2b_count FROM raw_b2b.organizers
-UNION ALL SELECT 'venues', COUNT(*) FROM raw_b2b.venues
+SELECT 'venues' AS tbl, COUNT(*) AS raw_b2b_count FROM raw_b2b.venues
 UNION ALL SELECT 'events', COUNT(*) FROM raw_b2b.events
 UNION ALL SELECT 'ticket_types', COUNT(*) FROM raw_b2b.ticket_types
 UNION ALL SELECT 'resellers', COUNT(*) FROM raw_b2b.resellers
 UNION ALL SELECT 'partnership_agreements', COUNT(*) FROM raw_b2b.partnership_agreements
-UNION ALL SELECT 'customers', COUNT(*) FROM raw_b2b.customers
 UNION ALL SELECT 'sales_channels', COUNT(*) FROM raw_b2b.sales_channels
 UNION ALL SELECT 'orders', COUNT(*) FROM raw_b2b.orders
 UNION ALL SELECT 'order_items', COUNT(*) FROM raw_b2b.order_items;
@@ -106,12 +104,12 @@ GROUP BY YEAR(o.order_ts), e.event_type, o.reseller_id
 ORDER BY e.event_type, yr;
 
 -- R3: Commission rate vs sales results
-SELECT o.organizer_id, o.reseller_id, oi.commission_rate,
+SELECT o.reseller_id, oi.commission_rate,
        SUM(oi.commission_amount) AS total_commission, SUM(oi.gross_amount) AS gross_amount
 FROM raw_b2b.orders o
 JOIN raw_b2b.order_items oi ON oi.order_id = o.order_id
 WHERE o.reseller_id IS NOT NULL
-GROUP BY o.organizer_id, o.reseller_id, oi.commission_rate
+GROUP BY o.reseller_id, oi.commission_rate
 ORDER BY total_commission DESC;
 
 -- R4: Most popular tickets per region

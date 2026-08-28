@@ -10,13 +10,11 @@ sources:
       warn_after: { count: 26, period: hour }
       error_after: { count: 50, period: hour }
     tables:
-      - name: organizers
       - name: venues
       - name: events
       - name: ticket_types
       - name: resellers
       - name: partnership_agreements
-      - name: customers
       - name: sales_channels
       - name: orders
       - name: order_items

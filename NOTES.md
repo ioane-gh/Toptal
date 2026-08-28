@@ -193,10 +193,95 @@ against the installed `SQLServerCredentials` dataclass -- `driver`, `server`,
 then fails only at the live connection test, for the same reason everything
 else SQL-Server-side does here. `dbt parse` succeeds cleanly against
 `dbt/models/sources/sources.yml` (0 models, as required -- Phase 9 stops at
-"declare sources," writes no models). The one example snapshot is saved as
-`organizers_snapshot.sql.example` (not `.sql`) so dbt's snapshot parser
-doesn't pick up a snapshot with no corresponding source data guarantees this
-early -- exactly the "one commented example" the spec asks for.
+"declare sources," writes no models). The one example snapshot was
+originally saved as `organizers_snapshot.sql.example` (not `.sql`) so dbt's
+snapshot parser doesn't pick up a snapshot with no corresponding source
+data guarantees this early -- exactly the "one commented example" the spec
+asks for. It's since been replaced with `venues_snapshot.sql.example` (see
+"Removing organizers and customers" below) once `organizers` itself was
+removed.
+
+## Removing organizers and customers
+
+Post-Phase-9, working through what a `dwh`/`datamart` build actually needs
+against the real report requirements (sales by week × channel; Feb 2020 vs.
+2019 filtered by reseller and event type; commission rate vs. sales
+results; most popular tickets per region) surfaced that **no requirement
+reads a customer attribute at all, and none reads an organizer's
+descriptive attributes** (name, country, `is_active`) -- only
+`organizer_id` as a bare grouping key for the commission-rate report. Asked
+explicitly how far to take it, the call was: remove both entirely,
+including `organizer_id`/`customer_id` as bare columns, not just the
+`organizers`/`customers` tables -- accepting that the commission-rate
+report now only breaks down by reseller, not by organizer.
+
+**Scope of the cut**, end to end:
+- `organizers` and `customers` tables dropped entirely from
+  `src/generators/b2b_schema.py` (SQLite) and `sql/03_raw_b2b_tables.sql`
+  (SQL Server).
+- `organizer_id` removed from `venues`, `events`, `orders`, and
+  `partnership_agreements`; `customer_id` removed from `orders`.
+- `raw_reseller.daily_sales` and the CSV contract
+  (`config/reseller_file_schema.yaml`) lose `CUSTOMER_ID`/`CUSTOMER_EMAIL`/
+  `CUSTOMER_COUNTRY`/`CUSTOMER_CITY` too, for the same reason -- consistency
+  across both sources, not just the B2B side.
+- `ingest_b2b.py`'s `TABLE_SPECS` and `config.yaml`'s `ingestion.b2b.load_order`
+  updated to match; `ingest_reseller.py` needed no code changes at all
+  (it reads column layout entirely from the schema YAML, no hardcoded
+  column names).
+- dbt: `sources.yml` no longer lists the two dropped tables; the now-broken
+  `customers_snapshot.sql` (a real, non-`.example` file we'd built together
+  a few turns earlier) is deleted outright rather than left dangling.
+
+**A structural consequence worth flagging:** order items used to be
+constrained to "any event under the same organizer" (multiple events could
+share one order via their common organizer). With no organizer grouping
+left, an order is now scoped to a single event -- picked once per order,
+all its line items drawn from that event's own ticket types. This
+incidentally also removes a currency-consistency risk: currency is
+assigned per event, so items sharing one order always share one currency
+by construction, where previously a multi-event order under one organizer
+relied on that organizer having a single consistent currency across all its
+events.
+
+This is additive-only DDL (`IF NOT EXISTS`), like the rest of `init_db.py`
+-- it does not `ALTER`/`DROP` an already-deployed database. On a database
+created before this change, `make reset && make init-db` is the supported
+path to a clean schema; there's no in-place column-migration script (out of
+scope for a demo-grade pipeline that owns and fully regenerates its own
+source data).
+
+## Choosing which tables to snapshot
+
+Working through which `raw_b2b` tables need their own dbt SCD2 snapshot
+(vs. a plain point-in-time join, vs. nothing at all) against the same four
+report requirements:
+
+- **`venues` is the one clear candidate.** "Most popular tickets per
+  region" groups by `venues.region` -- a mutable descriptive attribute, not
+  a stable key. Joining historical `order_items` to the *current* venues
+  state would misattribute past sales if a region were ever corrected.
+  This is the only report requirement that resolves a fact through a
+  mutable dimension *attribute* rather than a stable key.
+- **`resellers`/`event_type`/`ticket_type`/`channel` don't need SCD2.**
+  The reports filter/group by `reseller_id` (a stable key -- an ID doesn't
+  drift even if the reseller's other attributes do) and `event_type`
+  (fixed at event creation). A plain current-state lookup (for
+  `reseller_name` display) or a denormalized join at staging time is
+  enough; there's no point-in-time-correctness gap to close.
+- **`partnership_agreements` is already natively versioned** by the source
+  itself (`valid_from`/`valid_to`, multiple rows per reseller) --
+  `commission_rate` is baked into `order_items` at sale time, not resolved
+  by joining to a current-state dimension. Snapshotting an
+  already-historized table would just add a second, competing validity
+  concept (`dbt_valid_from` vs. the table's own `valid_from`).
+- One structural point that shapes the whole `dwh` design, not just
+  snapshots: ~40% of resellers are `THIRD_PARTY` and have sales *only* in
+  `raw_reseller.daily_sales`, never in `raw_b2b.orders`. A fact table built
+  off `raw_b2b.order_items` alone would silently exclude that entire slice
+  from every report that mentions "resellers" or "regions." Both sources
+  need their own staging model, unioned into one fact table, before any of
+  the four reports are fully correct.
 
 ## Other decisions
 

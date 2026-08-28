@@ -14,7 +14,7 @@ def test_partial_run_rollup(sql_engine):
     run = RunContext(sql_engine, log_file="logs/pipeline_test.log")
     run.start_run(run_type="FULL", sources="b2b")
 
-    with JobContext(sql_engine, run.run_id, "job_ok", "b2b", "organizers", "raw_b2b.organizers", "FULL") as job:
+    with JobContext(sql_engine, run.run_id, "job_ok", "b2b", "resellers", "raw_b2b.resellers", "FULL") as job:
         job.rows_read = 10
         job.rows_inserted = 10
         job.rows_skipped = 0
