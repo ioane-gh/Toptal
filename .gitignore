@@ -1,0 +1,14 @@
+data/
+logs/
+.env
+__pycache__/
+*.pyc
+gx/uncommitted/
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
+profiles.yml

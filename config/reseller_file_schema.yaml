@@ -1,0 +1,42 @@
+# The CSV contract for reseller daily-sales files — the single source of truth.
+# Every generator, validator, and ingestion job reads column layout from here;
+# nothing about the file layout is hardcoded elsewhere.
+#
+# name          -> header text as it appears in the CSV (order matters)
+# dtype         -> logical type used for validation: string | int | decimal | date | datetime
+# nullable      -> whether an empty value is acceptable
+# format        -> parse format, where relevant (dates)
+# target_column -> column name in raw_reseller.daily_sales
+
+file_name_pattern: '^DailySales_(\d{2})(\d{2})(\d{4})_([A-Za-z0-9_-]+)\.csv$'
+file_name_date_format: "%m%d%Y"
+
+allowed_currencies: [USD, EUR, GBP]
+allowed_event_types: [CONCERT, SPORTS, THEATRE, CONFERENCE, FESTIVAL, COMEDY]
+allowed_order_status: [COMPLETED, REFUNDED, CANCELLED]
+
+columns:
+  - { name: TICKET_ID,        dtype: string,   nullable: false, target_column: ticket_id }
+  - { name: ORDER_ID,         dtype: string,   nullable: false, target_column: order_id }
+  - { name: EVENT_ID,         dtype: string,   nullable: false, target_column: event_id }
+  - { name: EVENT_NAME,       dtype: string,   nullable: false, target_column: event_name }
+  - { name: EVENT_TYPE,       dtype: string,   nullable: false, target_column: event_type }
+  - { name: EVENT_DATE,       dtype: date,     nullable: false, format: "%Y-%m-%d", target_column: event_date }
+  - { name: VENUE_NAME,       dtype: string,   nullable: false, target_column: venue_name }
+  - { name: VENUE_CITY,       dtype: string,   nullable: true,  target_column: venue_city }
+  - { name: VENUE_REGION,     dtype: string,   nullable: true,  target_column: venue_region }
+  - { name: VENUE_COUNTRY,    dtype: string,   nullable: false, target_column: venue_country }
+  - { name: TICKET_TYPE,      dtype: string,   nullable: false, target_column: ticket_type }
+  - { name: QUANTITY,         dtype: int,      nullable: false, target_column: quantity }
+  - { name: UNIT_PRICE,       dtype: decimal,  nullable: false, target_column: unit_price }
+  - { name: TOTAL_AMOUNT,     dtype: decimal,  nullable: false, target_column: total_amount }
+  - { name: CURRENCY,         dtype: string,   nullable: false, target_column: currency }
+  - { name: SALE_DATE,        dtype: datetime, nullable: false, format: "%Y-%m-%d %H:%M:%S", target_column: sale_date }
+  - { name: SALE_CHANNEL,     dtype: string,   nullable: false, target_column: sale_channel }
+  - { name: CUSTOMER_ID,      dtype: string,   nullable: false, target_column: customer_id }
+  - { name: CUSTOMER_EMAIL,   dtype: string,   nullable: true,  target_column: customer_email }
+  - { name: CUSTOMER_COUNTRY, dtype: string,   nullable: true,  target_column: customer_country }
+  - { name: CUSTOMER_CITY,    dtype: string,   nullable: true,  target_column: customer_city }
+  - { name: RESELLER_ID,      dtype: string,   nullable: false, target_column: reseller_id }
+  - { name: RESELLER_NAME,    dtype: string,   nullable: false, target_column: reseller_name }
+  - { name: ORDER_STATUS,     dtype: string,   nullable: false, target_column: order_status }

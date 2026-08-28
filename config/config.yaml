@@ -1,0 +1,63 @@
+run:
+  profile: small            # small | medium | large
+  seed: 42
+
+paths:
+  sqlite_db: data/source/b2b.db
+  reseller_dir: data/reseller
+  logs: logs
+
+database:
+  project_db_name: ticketing_dwh   # safety check: `make reset` refuses unless MSSQL_DB matches this
+  data_dir: ""              # empty = SQL Server default data directory
+  log_dir: ""
+  data_file_size_mb: 2048
+  data_file_growth_mb: 512
+  log_file_size_mb: 512
+  log_file_growth_mb: 256
+  recovery_model: SIMPLE
+  read_committed_snapshot: true
+
+generation:
+  date_range: { start: "2019-01-01", end: "2020-12-31" }
+  profiles:
+    small:  { organizers: 10, venues: 30,  events: 200,  resellers: 15, customers: 5000,   orders: 50000,   large_file_rows: 50000 }
+    medium: { organizers: 25, venues: 90,  events: 1200, resellers: 40, customers: 100000, orders: 1000000, large_file_rows: 500000 }
+    large:  { organizers: 50, venues: 250, events: 4000, resellers: 80, customers: 500000, orders: 5000000, large_file_rows: 2000000 }
+  third_party_reseller_ratio: 0.4
+  mutation: { updated_row_ratio: 0.02, new_orders: 500 }
+  defects:
+    missing_required: 0.01
+    bad_date: 0.005
+    bad_number: 0.005
+    negative_quantity: 0.003
+    amount_mismatch: 0.005
+    duplicate_ticket_id: 0.002
+    column_count_mismatch: 0.001
+
+ingestion:
+  b2b:
+    chunk_size: 50000
+    bulk_batch_size: 10000
+    workers: 4
+    max_retries: 3
+    retry_backoff_sec: 2
+    max_skip_ratio: 0.05
+    load_order: [organizers, resellers, venues, customers, sales_channels,
+                 partnership_agreements, events, ticket_types, orders, order_items]
+  reseller:
+    csv_chunk_size: 100000
+    bulk_batch_size: 10000
+    workers: 4
+    detect_changed_files: false     # compare size + mtime for same-name redelivery
+    encoding_fallbacks: [utf-8, latin-1]
+    amount_tolerance: 0.01
+    memory_ceiling_mb: 1024
+
+quality:
+  enabled: true
+  fail_run_on_critical: false
+
+logging:
+  level: INFO
+  retention_days: 14
