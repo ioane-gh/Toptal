@@ -257,12 +257,21 @@ Working through which `raw_b2b` tables need their own dbt SCD2 snapshot
 (vs. a plain point-in-time join, vs. nothing at all) against the same four
 report requirements:
 
-- **`venues` is the one clear candidate.** "Most popular tickets per
-  region" groups by `venues.region` -- a mutable descriptive attribute, not
-  a stable key. Joining historical `order_items` to the *current* venues
-  state would misattribute past sales if a region were ever corrected.
-  This is the only report requirement that resolves a fact through a
-  mutable dimension *attribute* rather than a stable key.
+- **`venues` is the one *conceptually* plausible candidate -- and it still
+  doesn't get a real snapshot.** "Most popular tickets per region" groups
+  by `venues.region`, a descriptive attribute rather than a stable key, so
+  in principle a plain current-state join could misattribute historical
+  sales if a region were ever corrected. In practice: nothing in this
+  pipeline ever updates a venue after creation --
+  `src/generators/mutate_b2b.py` only touches `orders`/`order_items`, never
+  any dimension table -- so a real `venues_snapshot` would have
+  `dbt_valid_to` permanently `NULL` for every row: syntactically correct,
+  empirically inert, since the source it watches never changes. Caught
+  after already recommending it and getting corrected. The built models
+  (`dbt/models/dwh/`) use a plain current-state join for `region` instead;
+  `dbt/snapshots/venues_snapshot.sql.example` stays as a `.example` purely
+  to show the SCD2 mechanic, with this caveat spelled out in its own
+  comment.
 - **`resellers`/`event_type`/`ticket_type`/`channel` don't need SCD2.**
   The reports filter/group by `reseller_id` (a stable key -- an ID doesn't
   drift even if the reseller's other attributes do) and `event_type`
@@ -282,6 +291,32 @@ report requirements:
   from every report that mentions "resellers" or "regions." Both sources
   need their own staging model, unioned into one fact table, before any of
   the four reports are fully correct.
+
+## Building the real dwh/datamart models
+
+Eight models, no snapshot in the active set (see the correction above):
+
+- `dwh/staging/stg_b2b_sales.sql`, `stg_reseller_sales.sql` (views) --
+  one per source, each resolving that source's own display attributes
+  (channel, event type, region, ticket type name) and commission. The
+  reseller side casts `raw_reseller.daily_sales`'s NVARCHAR(255) columns
+  and resolves `commission_rate`/`commission_amount` via
+  `partnership_agreements` (neither exists in the CSV).
+- `dwh/dim_resellers.sql`, `dwh/fact_sales.sql` (tables) -- the plain
+  reseller lookup and the `UNION ALL` of both staging models, at
+  ticket-sold grain. Every datamart model reads from `fact_sales` only.
+- `datamart/*.sql` (tables, `+schema: datamart`) -- one model per report
+  requirement: `sales_by_week_channel` (R1), `yoy_feb_by_reseller_event_type`
+  (R2), `commission_vs_sales` (R3), `popular_tickets_by_region` (R4).
+
+Verified in this sandbox with `dbt parse` (8 models, 8 data tests, 14
+sources -- all resolve) and `dbt compile` (fails only at the live
+connection step, same as everywhere else SQL-Server-side; the model DAG
+itself -- `ref()`/`source()` resolution, schema.yml tests -- is confirmed
+correct up to that point). Column names in `stg_reseller_sales.sql` were
+cross-checked against `config/reseller_file_schema.yaml`'s `target_column`
+values directly, not just inferred, since a typo there wouldn't surface
+until an actual run against a live database.
 
 ## Other decisions
 

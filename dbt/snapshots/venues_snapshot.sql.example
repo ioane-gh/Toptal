@@ -1,17 +1,21 @@
--- Example only -- renamed .sql.example so dbt does not pick it up (scope
--- stops at Phase 9: "write no dbt models"). Rename to .sql once dwh
--- modeling begins. Shows the intended pattern: SCD2 history over a raw_b2b
--- dimension, keyed on the source's own updated_at.
+-- Example only -- renamed .sql.example so dbt does not pick it up. Shows
+-- the dbt snapshot mechanic (SCD2 history, keyed on the source's own
+-- updated_at), using venues purely as a syntactically plausible target --
+-- **not** a recommendation to actually run this against the current data.
 --
--- venues is the one dimension that structurally needs this treatment: the
--- "most popular tickets per region" report groups by venues.region, a
--- mutable attribute, not a stable key -- a plain current-state join would
--- misattribute historical sales if a venue's region were ever corrected.
--- (organizers/customers were removed entirely -- see NOTES.md "Removing
--- organizers and customers" -- and resellers/event_type/ticket_type are
--- used as stable keys or fixed attributes by every report, so none of them
--- need their own SCD2 model; see NOTES.md "Choosing which tables to
--- snapshot" for the full reasoning.)
+-- venues.region is conceptually the one dimension attribute where a plain
+-- current-state join could misattribute historical sales if it were ever
+-- corrected (see NOTES.md "Choosing which tables to snapshot" for why
+-- resellers/event_type/ticket_type don't have this problem). But in this
+-- generated dataset, nothing ever actually updates a venue after creation
+-- -- src/generators/mutate_b2b.py only touches orders/order_items, never
+-- any dimension table -- so venue_snapshot's dbt_valid_to would always be
+-- NULL and dbt_valid_from would always be the first snapshot run's
+-- timestamp: a real table, but one that never captures any actual history,
+-- because the source it watches never changes. There is currently no table
+-- in this dataset that would make a real SCD2 snapshot useful; the models
+-- actually built (dbt/models/dwh/, dbt/models/datamart/) use plain
+-- current-state joins throughout instead.
 --
 -- {% snapshot venues_snapshot %}
 --

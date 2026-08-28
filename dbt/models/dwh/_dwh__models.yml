@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: stg_b2b_sales
+    description: >
+      B2B-platform sales at order_item grain, joined out to the display
+      attributes each report needs (channel, event type, venue region,
+      ticket type name). One input to fact_sales.
+    columns:
+      - name: source_row_id
+        tests: [not_null, unique]
+
+  - name: stg_reseller_sales
+    description: >
+      Reseller/CSV sales at ticket-row grain, cast out of raw_reseller's
+      NVARCHAR(255) columns, with commission_rate/commission_amount
+      resolved via partnership_agreements (absent from the CSV itself).
+      The other input to fact_sales -- covers the ~40% of resellers with
+      no raw_b2b.orders rows at all.
+    columns:
+      - name: source_row_id
+        tests: [not_null, unique]
+
+  - name: dim_resellers
+    description: >
+      Current-state reseller lookup (not historized -- reports filter/group
+      by reseller_id, a stable key, never by a mutable reseller attribute).
+      Covers platform and third-party resellers alike.
+    columns:
+      - name: reseller_id
+        tests: [not_null, unique]
+
+  - name: fact_sales
+    description: >
+      One row per ticket sold, unioned from both sources. This is the
+      single table every datamart report reads from.
+    columns:
+      - name: order_ts
+        tests: [not_null]
+      - name: gross_amount
+        tests: [not_null]

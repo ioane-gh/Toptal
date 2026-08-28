@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: sales_by_week_channel
+    description: "R1 -- sales results by week and by sales channel."
+
+  - name: yoy_feb_by_reseller_event_type
+    description: >
+      R2 -- Feb 2020 vs. Feb 2019 sales results, filtered by reseller and
+      event type.
+
+  - name: commission_vs_sales
+    description: "R3 -- commission rate vs. sales results, per reseller."
+
+  - name: popular_tickets_by_region
+    description: "R4 -- most popular tickets per region."

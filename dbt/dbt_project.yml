@@ -15,11 +15,19 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# Scope stops at Phase 9: this is a skeleton only. models/dwh/ and
-# models/datamart/ exist (see those directories) but contain no models yet,
-# so no per-folder config is declared here -- an empty override for a
-# directory with nothing in it is just a dbt warning waiting to happen.
-# Add `ticketing_data_platform.dwh` / `.datamart` blocks here once modeling
-# starts. See README "Known limitations".
+# dwh models materialize as tables (fact_sales/dim_resellers are read by
+# every datamart model, not worth recomputing per query); dwh/staging/
+# overrides back to view -- it's a thin cast/join layer over raw, cheap to
+# recompute, no reason to persist a copy. datamart models materialize as
+# tables in the plain `datamart` schema (see
+# macros/generate_schema_name.sql -- without it this would land in
+# `dwh_datamart` instead).
 models:
-  ticketing_data_platform: {}
+  ticketing_data_platform:
+    dwh:
+      +materialized: table
+      staging:
+        +materialized: view
+    datamart:
+      +materialized: table
+      +schema: datamart
