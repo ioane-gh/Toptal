@@ -1,0 +1,8 @@
+{
+  "files.associations": {
+    "dbt/models/**/*.sql": "jinja-sql",
+    "dbt/snapshots/**/*.sql": "jinja-sql",
+    "dbt/macros/**/*.sql": "jinja-sql",
+    "dbt/tests/**/*.sql": "jinja-sql"
+  }
+}
