@@ -144,6 +144,25 @@ the static `generation.date_range.end` (2020-12-31): `mutate_b2b.py` and
 incremental loads add orders dated at generation time, which are legitimately
 outside the historical range.
 
+## Phase 8 — SIGINT/SIGTERM handling scope
+
+`src/common/signals.py` exposes a process-wide `threading.Event`
+(`STOP_EVENT`), set by `runner.py`'s signal handlers. `ingest_b2b.py`'s
+chunk generators and `ingest_reseller.py`'s row-batching generator check it
+between chunks/rows and stop yielding new work, so whatever chunk already
+started committing finishes normally and nothing new begins -- exactly
+"stop scheduling new chunks, let in-flight chunks commit."
+
+`ProcessPoolExecutor` workers (reseller file processing) are separate OS
+processes and don't share that in-process `Event`, so a signal doesn't
+reach a file already dispatched to a worker -- it finishes that file
+normally. What the runner *does* stop is handing out new files: the
+submission loop checks `STOP_EVENT` before each `executor.submit(...)` call.
+Given files are the unit of work there (typically small, except the one
+oversized demo file), this is the right granularity trade-off rather than
+plumbing a `multiprocessing.Event` through every worker for finer-grained
+mid-file cancellation.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`

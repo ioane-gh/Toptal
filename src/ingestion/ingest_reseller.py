@@ -36,6 +36,7 @@ from src.common.config import Settings, get_settings
 from src.common.db import get_engine, retry_on_transient
 from src.common.logging_setup import data_error, get_logger
 from src.common.metadata import JobContext, claim_file, complete_file, fail_file, is_file_processed, mark_skipped_invalid_name
+from src.common.signals import STOP_EVENT
 
 
 def load_schema(settings: Settings) -> dict:
@@ -161,6 +162,8 @@ def batched_rows(reader: csv.reader, chunk_size: int):
     chunk = []
     row_number = 0
     for raw_row in reader:
+        if STOP_EVENT.is_set():
+            return  # stop scheduling new chunks; whatever was already yielded has committed
         row_number += 1
         chunk.append((row_number, raw_row))
         if len(chunk) >= chunk_size:
@@ -345,6 +348,9 @@ def run_reseller_ingestion(
     if profile_memory:
         tracemalloc.start()
         for candidate in valid:
+            if STOP_EVENT.is_set():
+                logger.warning("Stop requested -- no longer scheduling new files (%d not started)", len(valid) - summary["files_processed"] - summary["files_skipped"] - summary["files_failed"])
+                break
             job = JobContext(engine, run_id, f"ingest_reseller_{candidate.file_name}", "reseller", candidate.file_name, "raw_reseller.daily_sales", mode, logger=logger)
             row_count = rows_inserted = rows_skipped = 0
             status = "FAILED"
@@ -365,10 +371,12 @@ def run_reseller_ingestion(
         settings_path = str(settings.config_path)
         env_path = str(settings.repo_root / ".env")
         with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = [
-                executor.submit(_worker, settings_path, env_path, run_id, mode, c, settings.log_level)
-                for c in valid
-            ]
+            futures = []
+            for c in valid:
+                if STOP_EVENT.is_set():
+                    logger.warning("Stop requested -- no longer scheduling new files (%d not submitted)", len(valid) - len(futures))
+                    break
+                futures.append(executor.submit(_worker, settings_path, env_path, run_id, mode, c, settings.log_level))
             for future in as_completed(futures):
                 file_name, row_count, rows_inserted, rows_skipped, status, error = future.result()
 

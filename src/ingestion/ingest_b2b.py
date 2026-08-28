@@ -35,6 +35,7 @@ from src.common.config import Settings
 from src.common.db import retry_on_transient
 from src.common.logging_setup import data_error
 from src.common.metadata import JobContext, get_watermark, set_watermark, utcnow
+from src.common.signals import STOP_EVENT
 
 
 @dataclass
@@ -144,6 +145,8 @@ def read_chunks_full(conn: sqlite3.Connection, table: str, spec: TableSpec, chun
     last_pk = 0
     cols_sql = ", ".join(spec.columns)
     while True:
+        if STOP_EVENT.is_set():
+            return  # stop scheduling new chunks; whatever was already yielded has committed
         rows = conn.execute(
             f"SELECT {cols_sql} FROM {table} WHERE {spec.pk} > ? ORDER BY {spec.pk} LIMIT ?",
             (last_pk, chunk_size),
@@ -158,6 +161,8 @@ def read_chunks_incremental(conn: sqlite3.Connection, table: str, spec: TableSpe
     last_pk = 0
     cols_sql = ", ".join(spec.columns)
     while True:
+        if STOP_EVENT.is_set():
+            return  # stop scheduling new chunks; the watermark is only advanced after a full pass, so this is safe to resume
         rows = conn.execute(
             f"SELECT {cols_sql} FROM {table} WHERE updated_at > ? AND updated_at <= ? AND {spec.pk} > ? ORDER BY {spec.pk} LIMIT ?",
             (wm_iso, hb_iso, last_pk, chunk_size),
