@@ -74,6 +74,34 @@ full-loads it (truncate + reload), even during an `--mode incremental` run
 -- see `TableSpec.has_updated_at` / `ingest_table()` in
 `src/ingestion/ingest_b2b.py`.
 
+## Phase 6 — pandas vs csv module for row parsing
+
+The spec suggests `pandas.read_csv(..., chunksize=...)`. In practice, pandas'
+bad-line handling doesn't fit this job: a genuinely short row (fewer fields
+than the header) is silently zero/NaN-padded rather than reported, so it's
+indistinguishable from a deliberately blank trailing field, and even with
+`keep_default_na=False` (verified empirically) the padded NaN and the real
+empty string `""` differ, but only defensively -- while `on_bad_lines`
+callbacks only fire for *too many* fields, and only with `engine='python'`.
+Reconstructing an accurate physical `_source_row_number` for a line that
+pandas silently dropped is not exposed at all.
+
+`ingest_reseller.py` instead reads with the stdlib `csv` module and batches
+`csv_chunk_size` rows at a time by hand -- functionally identical to
+`chunksize` for the bounded-memory requirement (the file is still never
+materialized in full; verified under `--profile-memory` on the 2M-row large
+file), but it gives an exact field count per row (so `wrong_column_count`
+is caught directly, in both the too-few and too-many direction) and an
+exact 1-based row number for every log line.
+
+Encoding detection samples only the first 64KB of the file (`sniff_encoding`)
+rather than reading it whole, to keep the "never read a whole file into
+memory" guarantee even for encoding sniffing.
+
+One `meta.ingestion_job` row is written per **file** (not one per reseller
+or one for the whole reseller source) -- source_object = the file name --
+which gives the same fine-grained traceability Phase 5 gets per table.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`
