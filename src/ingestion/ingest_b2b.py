@@ -47,20 +47,15 @@ class TableSpec:
 
 
 TABLE_SPECS: dict[str, TableSpec] = {
-    "organizers": TableSpec(
-        pk="organizer_id",
-        columns=["organizer_id", "organizer_name", "country", "region", "city", "is_active", "created_at", "updated_at"],
-        types={"organizer_id": "int", "organizer_name": "str", "country": "str", "region": "str", "city": "str", "is_active": "bool", "created_at": "datetime", "updated_at": "datetime"},
-    ),
     "venues": TableSpec(
         pk="venue_id",
-        columns=["venue_id", "organizer_id", "venue_name", "city", "region", "country", "capacity", "created_at", "updated_at"],
-        types={"venue_id": "int", "organizer_id": "int", "venue_name": "str", "city": "str", "region": "str", "country": "str", "capacity": "int", "created_at": "datetime", "updated_at": "datetime"},
+        columns=["venue_id", "venue_name", "city", "region", "country", "capacity", "created_at", "updated_at"],
+        types={"venue_id": "int", "venue_name": "str", "city": "str", "region": "str", "country": "str", "capacity": "int", "created_at": "datetime", "updated_at": "datetime"},
     ),
     "events": TableSpec(
         pk="event_id",
-        columns=["event_id", "venue_id", "organizer_id", "event_name", "event_type", "event_date", "status", "created_at", "updated_at"],
-        types={"event_id": "int", "venue_id": "int", "organizer_id": "int", "event_name": "str", "event_type": "str", "event_date": "date", "status": "str", "created_at": "datetime", "updated_at": "datetime"},
+        columns=["event_id", "venue_id", "event_name", "event_type", "event_date", "status", "created_at", "updated_at"],
+        types={"event_id": "int", "venue_id": "int", "event_name": "str", "event_type": "str", "event_date": "date", "status": "str", "created_at": "datetime", "updated_at": "datetime"},
     ),
     "ticket_types": TableSpec(
         pk="ticket_type_id",
@@ -74,13 +69,8 @@ TABLE_SPECS: dict[str, TableSpec] = {
     ),
     "partnership_agreements": TableSpec(
         pk="agreement_id",
-        columns=["agreement_id", "organizer_id", "reseller_id", "commission_rate", "valid_from", "valid_to", "created_at", "updated_at"],
-        types={"agreement_id": "int", "organizer_id": "int", "reseller_id": "int", "commission_rate": "decimal6", "valid_from": "date", "valid_to": "date_null", "created_at": "datetime", "updated_at": "datetime"},
-    ),
-    "customers": TableSpec(
-        pk="customer_id",
-        columns=["customer_id", "first_name", "last_name", "email", "country", "region", "city", "created_at", "updated_at"],
-        types={"customer_id": "int", "first_name": "str", "last_name": "str", "email": "str", "country": "str", "region": "str", "city": "str", "created_at": "datetime", "updated_at": "datetime"},
+        columns=["agreement_id", "reseller_id", "commission_rate", "valid_from", "valid_to", "created_at", "updated_at"],
+        types={"agreement_id": "int", "reseller_id": "int", "commission_rate": "decimal6", "valid_from": "date", "valid_to": "date_null", "created_at": "datetime", "updated_at": "datetime"},
     ),
     "sales_channels": TableSpec(
         pk="channel_id",
@@ -90,8 +80,8 @@ TABLE_SPECS: dict[str, TableSpec] = {
     ),
     "orders": TableSpec(
         pk="order_id",
-        columns=["order_id", "customer_id", "seller_type", "organizer_id", "reseller_id", "channel_id", "order_ts", "currency", "total_amount", "total_quantity", "order_status", "created_at", "updated_at"],
-        types={"order_id": "int", "customer_id": "int", "seller_type": "str", "organizer_id": "int", "reseller_id": "int_null", "channel_id": "int", "order_ts": "datetime", "currency": "str", "total_amount": "decimal2", "total_quantity": "int", "order_status": "str", "created_at": "datetime", "updated_at": "datetime"},
+        columns=["order_id", "seller_type", "reseller_id", "channel_id", "order_ts", "currency", "total_amount", "total_quantity", "order_status", "created_at", "updated_at"],
+        types={"order_id": "int", "seller_type": "str", "reseller_id": "int_null", "channel_id": "int", "order_ts": "datetime", "currency": "str", "total_amount": "decimal2", "total_quantity": "int", "order_status": "str", "created_at": "datetime", "updated_at": "datetime"},
     ),
     "order_items": TableSpec(
         pk="order_item_id",
