@@ -169,8 +169,21 @@ mid-file cancellation.
 is named in the stack table, and Appendix A's `requirements.txt` block omits
 it entirely), but Phase 9 explicitly requires `dbt debug` to pass, which
 needs the package installed. Added `dbt-sqlserver==1.11.1` (pulls in
-`dbt-core==1.12.3`) to `requirements.txt` as a deliberate, documented
-addition.
+`dbt-core`) to `requirements.txt` as a deliberate, documented addition.
+
+**Post-hoc fix:** the original pin of `pyodbc==5.1.0` (Appendix A's own
+pinned version) conflicts with `dbt-sqlserver==1.11.1`, which requires
+`pyodbc>=5.2.0` -- `pip install -r requirements.txt` fails outright with
+`ResolutionImpossible` (reported by a user running the Windows quick-start
+steps; nothing installs, hence every subsequent `ModuleNotFoundError`).
+Bumped to `pyodbc==5.2.0`, the lowest version that satisfies both. This
+sandbox has no ODBC driver either way, so the conflict wasn't visible while
+building Phases 1-9 (pip was never run against the full, final
+`requirements.txt` with dbt-sqlserver already present) -- caught and fixed
+only once exercised on a real Windows machine. Verified with a clean venv:
+`pip install -r requirements.txt` now resolves and installs cleanly
+(`dbt-core` lands on 1.11.14 rather than 1.12.3, still within
+`dbt-sqlserver`'s `>=1.11.0,<2.0` constraint).
 
 Verified in this sandbox: `dbt debug` correctly reports `profiles.yml file
 [OK found and valid]` and `dbt_project.yml file [OK found and valid]` for

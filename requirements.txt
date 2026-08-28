@@ -1,4 +1,4 @@
-pyodbc==5.1.0
+pyodbc==5.2.0
 SQLAlchemy==2.0.35
 pandas==2.2.3
 pyyaml==6.0.2
