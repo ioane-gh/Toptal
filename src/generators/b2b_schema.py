@@ -1,5 +1,10 @@
 """SQLite DDL for the source B2B operational database (data/source/b2b.db).
 
+organizers and customers were deliberately removed (see NOTES.md "Removing
+organizers and customers") -- neither is read by any of the four report
+requirements, and organizer_id/customer_id were removed everywhere as bare
+keys too, not just their descriptive-attribute tables.
+
 Every table carries created_at / updated_at (TEXT, ISO-8601 UTC, not null) --
 these drive incremental ingestion (Phase 5) and later dbt snapshots.
 Indexes on updated_at, FKs, and orders.order_ts are created after the bulk
@@ -7,20 +12,8 @@ load in generate_b2b.py, not here, per the spec (index-after-load for speed).
 """
 
 CREATE_TABLES_SQL = """
-CREATE TABLE IF NOT EXISTS organizers (
-    organizer_id    INTEGER PRIMARY KEY,
-    organizer_name  TEXT NOT NULL,
-    country         TEXT NOT NULL,
-    region          TEXT NOT NULL,
-    city            TEXT NOT NULL,
-    is_active       INTEGER NOT NULL,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS venues (
     venue_id        INTEGER PRIMARY KEY,
-    organizer_id    INTEGER NOT NULL REFERENCES organizers(organizer_id),
     venue_name      TEXT NOT NULL,
     city            TEXT NOT NULL,
     region          TEXT NOT NULL,
@@ -33,7 +26,6 @@ CREATE TABLE IF NOT EXISTS venues (
 CREATE TABLE IF NOT EXISTS events (
     event_id        INTEGER PRIMARY KEY,
     venue_id        INTEGER NOT NULL REFERENCES venues(venue_id),
-    organizer_id    INTEGER NOT NULL REFERENCES organizers(organizer_id),
     event_name      TEXT NOT NULL,
     event_type      TEXT NOT NULL,
     event_date      TEXT NOT NULL,
@@ -66,23 +58,10 @@ CREATE TABLE IF NOT EXISTS resellers (
 
 CREATE TABLE IF NOT EXISTS partnership_agreements (
     agreement_id     INTEGER PRIMARY KEY,
-    organizer_id     INTEGER NOT NULL REFERENCES organizers(organizer_id),
     reseller_id      INTEGER NOT NULL REFERENCES resellers(reseller_id),
     commission_rate  TEXT NOT NULL,
     valid_from       TEXT NOT NULL,
     valid_to         TEXT,
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS customers (
-    customer_id      INTEGER PRIMARY KEY,
-    first_name       TEXT NOT NULL,
-    last_name        TEXT NOT NULL,
-    email            TEXT NOT NULL,
-    country          TEXT NOT NULL,
-    region           TEXT NOT NULL,
-    city             TEXT NOT NULL,
     created_at       TEXT NOT NULL,
     updated_at       TEXT NOT NULL
 );
@@ -95,9 +74,7 @@ CREATE TABLE IF NOT EXISTS sales_channels (
 
 CREATE TABLE IF NOT EXISTS orders (
     order_id         INTEGER PRIMARY KEY,
-    customer_id      INTEGER NOT NULL REFERENCES customers(customer_id),
     seller_type      TEXT NOT NULL,
-    organizer_id     INTEGER NOT NULL REFERENCES organizers(organizer_id),
     reseller_id      INTEGER REFERENCES resellers(reseller_id),
     channel_id       INTEGER NOT NULL REFERENCES sales_channels(channel_id),
     order_ts         TEXT NOT NULL,
@@ -125,22 +102,16 @@ CREATE TABLE IF NOT EXISTS order_items (
 """
 
 INDEXES_SQL = """
-CREATE INDEX IF NOT EXISTS ix_organizers_updated_at ON organizers(updated_at);
 CREATE INDEX IF NOT EXISTS ix_venues_updated_at ON venues(updated_at);
-CREATE INDEX IF NOT EXISTS ix_venues_organizer_id ON venues(organizer_id);
 CREATE INDEX IF NOT EXISTS ix_events_updated_at ON events(updated_at);
 CREATE INDEX IF NOT EXISTS ix_events_venue_id ON events(venue_id);
-CREATE INDEX IF NOT EXISTS ix_events_organizer_id ON events(organizer_id);
 CREATE INDEX IF NOT EXISTS ix_ticket_types_updated_at ON ticket_types(updated_at);
 CREATE INDEX IF NOT EXISTS ix_ticket_types_event_id ON ticket_types(event_id);
 CREATE INDEX IF NOT EXISTS ix_resellers_updated_at ON resellers(updated_at);
 CREATE INDEX IF NOT EXISTS ix_partnership_agreements_updated_at ON partnership_agreements(updated_at);
-CREATE INDEX IF NOT EXISTS ix_partnership_agreements_org_reseller ON partnership_agreements(organizer_id, reseller_id);
-CREATE INDEX IF NOT EXISTS ix_customers_updated_at ON customers(updated_at);
+CREATE INDEX IF NOT EXISTS ix_partnership_agreements_reseller_id ON partnership_agreements(reseller_id);
 CREATE INDEX IF NOT EXISTS ix_orders_updated_at ON orders(updated_at);
 CREATE INDEX IF NOT EXISTS ix_orders_order_ts ON orders(order_ts);
-CREATE INDEX IF NOT EXISTS ix_orders_customer_id ON orders(customer_id);
-CREATE INDEX IF NOT EXISTS ix_orders_organizer_id ON orders(organizer_id);
 CREATE INDEX IF NOT EXISTS ix_orders_reseller_id ON orders(reseller_id);
 CREATE INDEX IF NOT EXISTS ix_order_items_updated_at ON order_items(updated_at);
 CREATE INDEX IF NOT EXISTS ix_order_items_order_id ON order_items(order_id);
@@ -149,13 +120,11 @@ CREATE INDEX IF NOT EXISTS ix_order_items_ticket_type_id ON order_items(ticket_t
 """
 
 TABLE_ORDER = [
-    "organizers",
     "venues",
     "events",
     "ticket_types",
     "resellers",
     "partnership_agreements",
-    "customers",
     "sales_channels",
     "orders",
     "order_items",

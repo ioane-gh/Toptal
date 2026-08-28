@@ -21,9 +21,9 @@ database:
 generation:
   date_range: { start: "2019-01-01", end: "2020-12-31" }
   profiles:
-    small:  { organizers: 10, venues: 30,  events: 200,  resellers: 15, customers: 5000,   orders: 50000,   large_file_rows: 50000 }
-    medium: { organizers: 25, venues: 90,  events: 1200, resellers: 40, customers: 100000, orders: 1000000, large_file_rows: 500000 }
-    large:  { organizers: 50, venues: 250, events: 4000, resellers: 80, customers: 500000, orders: 5000000, large_file_rows: 2000000 }
+    small:  { venues: 30,  events: 200,  resellers: 15, orders: 50000,   large_file_rows: 50000 }
+    medium: { venues: 90,  events: 1200, resellers: 40, orders: 1000000, large_file_rows: 500000 }
+    large:  { venues: 250, events: 4000, resellers: 80, orders: 5000000, large_file_rows: 2000000 }
   third_party_reseller_ratio: 0.4
   mutation: { updated_row_ratio: 0.02, new_orders: 500 }
   defects:
@@ -43,7 +43,7 @@ ingestion:
     max_retries: 3
     retry_backoff_sec: 2
     max_skip_ratio: 0.05
-    load_order: [organizers, resellers, venues, customers, sales_channels,
+    load_order: [resellers, venues, sales_channels,
                  partnership_agreements, events, ticket_types, orders, order_items]
   reseller:
     csv_chunk_size: 100000

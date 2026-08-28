@@ -32,9 +32,8 @@ WHERE strftime('%m', o.order_ts) = '02'
 GROUP BY yr, e.event_type, o.reseller_id
 ORDER BY e.event_type, yr;
 
--- R3: Commission rate vs sales results (rate and amount per line, reseller, organizer)
+-- R3: Commission rate vs sales results (rate and amount per line, reseller)
 SELECT
-    o.organizer_id,
     o.reseller_id,
     oi.commission_rate,
     SUM(oi.commission_amount) AS total_commission,
@@ -42,7 +41,7 @@ SELECT
 FROM orders o
 JOIN order_items oi ON oi.order_id = o.order_id
 WHERE o.reseller_id IS NOT NULL
-GROUP BY o.organizer_id, o.reseller_id, oi.commission_rate
+GROUP BY o.reseller_id, oi.commission_rate
 ORDER BY total_commission DESC
 LIMIT 20;
 
