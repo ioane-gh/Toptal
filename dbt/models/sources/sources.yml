@@ -1,0 +1,43 @@
+version: 2
+
+sources:
+  - name: raw_b2b
+    database: "{{ env_var('MSSQL_DB', 'ticketing_dwh') }}"
+    schema: raw_b2b
+    loader: python_pipeline
+    loaded_at_field: _ingested_at
+    freshness:
+      warn_after: { count: 26, period: hour }
+      error_after: { count: 50, period: hour }
+    tables:
+      - name: organizers
+      - name: venues
+      - name: events
+      - name: ticket_types
+      - name: resellers
+      - name: partnership_agreements
+      - name: customers
+      - name: sales_channels
+      - name: orders
+      - name: order_items
+
+  - name: raw_reseller
+    database: "{{ env_var('MSSQL_DB', 'ticketing_dwh') }}"
+    schema: raw_reseller
+    loader: python_pipeline
+    loaded_at_field: _ingested_at
+    freshness:
+      warn_after: { count: 26, period: hour }
+      error_after: { count: 50, period: hour }
+    tables:
+      - name: daily_sales
+
+  - name: meta
+    database: "{{ env_var('MSSQL_DB', 'ticketing_dwh') }}"
+    schema: meta
+    tables:
+      - name: ingestion_run
+      - name: ingestion_job
+      - name: watermark
+      - name: processed_file
+      - name: data_quality_result

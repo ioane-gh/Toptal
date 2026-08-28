@@ -8,3 +8,6 @@ Faker==30.3.0
 great-expectations==1.21.0
 python-dotenv==1.0.1
 pytest==8.3.3
+# Not in the spec's Appendix pin list, but required for `dbt debug` to pass
+# (Phase 9 acceptance criterion) -- pulls in dbt-core transitively.
+dbt-sqlserver==1.11.1

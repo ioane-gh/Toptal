@@ -163,6 +163,28 @@ oversized demo file), this is the right granularity trade-off rather than
 plumbing a `multiprocessing.Event` through every worker for finer-grained
 mid-file cancellation.
 
+## Phase 9 — dbt skeleton and requirements.txt
+
+`dbt-sqlserver` is not in the spec's Appendix A pin list (only `dbt-sqlserver`
+is named in the stack table, and Appendix A's `requirements.txt` block omits
+it entirely), but Phase 9 explicitly requires `dbt debug` to pass, which
+needs the package installed. Added `dbt-sqlserver==1.11.1` (pulls in
+`dbt-core==1.12.3`) to `requirements.txt` as a deliberate, documented
+addition.
+
+Verified in this sandbox: `dbt debug` correctly reports `profiles.yml file
+[OK found and valid]` and `dbt_project.yml file [OK found and valid]` for
+`dbt/profiles.yml.example` + `dbt/dbt_project.yml` (fields checked directly
+against the installed `SQLServerCredentials` dataclass -- `driver`, `server`,
+`database`, `schema`, `windows_login`, `encrypt`, `trust_cert`, etc.); it
+then fails only at the live connection test, for the same reason everything
+else SQL-Server-side does here. `dbt parse` succeeds cleanly against
+`dbt/models/sources/sources.yml` (0 models, as required -- Phase 9 stops at
+"declare sources," writes no models). The one example snapshot is saved as
+`organizers_snapshot.sql.example` (not `.sql`) so dbt's snapshot parser
+doesn't pick up a snapshot with no corresponding source data guarantees this
+early -- exactly the "one commented example" the spec asks for.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`

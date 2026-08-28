@@ -1,0 +1,28 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR to this directory)
+# and fill in credentials, or rely on the env_var() defaults below matching
+# your .env. Mirrors src/common/db.py's connection logic: Driver 17 defaults
+# to Encrypt=no (encrypt: false here); switch to encrypt: true + trust_cert:
+# true only if ODBC_DRIVER points at Driver 18 against a self-signed cert.
+
+ticketing_dwh:
+  target: dev
+  outputs:
+    dev:
+      type: sqlserver
+      driver: "{{ env_var('ODBC_DRIVER', 'ODBC Driver 17 for SQL Server') }}"
+      server: "{{ env_var('MSSQL_SERVER', 'localhost') }}"
+      port: 1433
+      database: "{{ env_var('MSSQL_DB', 'ticketing_dwh') }}"
+      schema: dwh
+
+      # Matches MSSQL_TRUSTED_CONNECTION=yes in .env (the default). For SQL
+      # auth instead, set windows_login to false and uncomment user/password.
+      windows_login: true
+      # user: "{{ env_var('MSSQL_USER') }}"
+      # password: "{{ env_var('MSSQL_PASSWORD') }}"
+
+      encrypt: false
+      trust_cert: false
+      threads: 4
+      login_timeout: 30
+      query_timeout: 300

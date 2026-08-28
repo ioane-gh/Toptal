@@ -1,0 +1,25 @@
+name: ticketing_data_platform
+version: "1.0.0"
+config-version: 2
+
+profile: ticketing_dwh
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Scope stops at Phase 9: this is a skeleton only. models/dwh/ and
+# models/datamart/ exist (see those directories) but contain no models yet,
+# so no per-folder config is declared here -- an empty override for a
+# directory with nothing in it is just a dbt warning waiting to happen.
+# Add `ticketing_data_platform.dwh` / `.datamart` blocks here once modeling
+# starts. See README "Known limitations".
+models:
+  ticketing_data_platform: {}
