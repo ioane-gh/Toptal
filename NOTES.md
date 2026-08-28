@@ -64,6 +64,16 @@ Verified manually (see commit history): joining
 commission rate for effectively every valid CSV row (1390/1391 rows in a
 20-file sample; the one miss was a deliberately injected defect row).
 
+## Phase 5 — sales_channels has no updated_at
+
+`sales_channels` is the one B2B table without `created_at`/`updated_at`
+(Phase 2's table spec lists only `channel_id, channel_code, channel_name`),
+so it can't participate in watermark-based incremental loads. It's a tiny,
+effectively-static reference table (5 rows), so `ingest_b2b.py` always
+full-loads it (truncate + reload), even during an `--mode incremental` run
+-- see `TableSpec.has_updated_at` / `ingest_table()` in
+`src/ingestion/ingest_b2b.py`.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`
