@@ -19,6 +19,18 @@
 -- file-identity-based incrementality the reseller ingestion side already
 -- uses.
 --
+-- The watermark is resolved once via run_query() and spliced in as a
+-- literal, rather than an inline `where x > (select max(x) from
+-- {{ this }})` subquery -- dbt-sqlserver builds every table through a
+-- `CREATE OR ALTER VIEW ... AS <this query>` wrapped in dynamic
+-- EXEC('...') (see dbt/include/sqlserver/macros/relations/table/create.sql
+-- and .../views/create.sql), and that specific shape rejected the inline
+-- aggregate subquery with error 147 even though the same subquery is
+-- ordinary, valid T-SQL run ad hoc. Precomputing the value sidesteps
+-- whatever that view-creation edge case is, and is also cheaper: the scan
+-- over fact_sales for the watermark happens once per side, not once per
+-- row inside the view definition.
+--
 -- Indexed on every column a datamart model filters/joins/groups by --
 -- this is the table that actually gets large (millions of rows at the
 -- `large` profile), everything downstream of it is a small pre-aggregated
@@ -40,6 +52,22 @@
     )
 }}
 
+{% if is_incremental() %}
+    {% set b2b_watermark_query %}
+        select CONVERT(varchar(23), COALESCE(MAX(source_updated_at), CAST('1900-01-01' as datetime2(3))), 121)
+        from {{ this }}
+        where source_system = 'B2B'
+    {% endset %}
+    {% set b2b_watermark = run_query(b2b_watermark_query).columns[0].values()[0] %}
+
+    {% set reseller_watermark_query %}
+        select CONVERT(varchar(23), COALESCE(MAX(source_updated_at), CAST('1900-01-01' as datetime2(3))), 121)
+        from {{ this }}
+        where source_system = 'RESELLER'
+    {% endset %}
+    {% set reseller_watermark = run_query(reseller_watermark_query).columns[0].values()[0] %}
+{% endif %}
+
 select
     source_row_id,
     seller_type,
@@ -57,11 +85,7 @@ select
     source_updated_at
 from {{ ref('stg_b2b_sales') }}
 {% if is_incremental() %}
-where source_updated_at > (
-    select COALESCE(MAX(source_updated_at), CAST('1900-01-01' as datetime2(3)))
-    from {{ this }}
-    where source_system = 'B2B'
-)
+where source_updated_at > CAST('{{ b2b_watermark }}' as datetime2(3))
 {% endif %}
 
 union all
@@ -83,9 +107,5 @@ select
     source_updated_at
 from {{ ref('stg_reseller_sales') }}
 {% if is_incremental() %}
-where source_updated_at > (
-    select COALESCE(MAX(source_updated_at), CAST('1900-01-01' as datetime2(3)))
-    from {{ this }}
-    where source_system = 'RESELLER'
-)
+where source_updated_at > CAST('{{ reseller_watermark }}' as datetime2(3))
 {% endif %}
