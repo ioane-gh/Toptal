@@ -31,7 +31,8 @@ select
     CAST(ds.total_amount as decimal(18,4))             as gross_amount,
     COALESCE(pa.commission_rate, 0)                    as commission_rate,
     CAST(ds.total_amount as decimal(18,4)) * COALESCE(pa.commission_rate, 0) as commission_amount,
-    'RESELLER'                                         as source_system
+    'RESELLER'                                         as source_system,
+    ds._ingested_at                                    as source_updated_at
 from {{ source('raw_reseller', 'daily_sales') }} ds
 outer apply (
     select top 1 a.commission_rate

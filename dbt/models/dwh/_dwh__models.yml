@@ -9,6 +9,9 @@ models:
     columns:
       - name: source_row_id
         tests: [not_null, unique]
+      - name: source_updated_at
+        description: order_items.updated_at -- fact_sales' incremental watermark for this source.
+        tests: [not_null]
 
   - name: stg_reseller_sales
     description: >
@@ -20,6 +23,9 @@ models:
     columns:
       - name: source_row_id
         tests: [not_null, unique]
+      - name: source_updated_at
+        description: daily_sales._ingested_at -- fact_sales' incremental watermark for this source (rows are never mutated after load, so load time stands in for an update timestamp).
+        tests: [not_null]
 
   - name: dim_resellers
     description: >
@@ -32,10 +38,14 @@ models:
 
   - name: fact_sales
     description: >
-      One row per ticket sold, unioned from both sources. This is the
-      single table every datamart report reads from.
+      One row per ticket sold, unioned from both sources. Incremental,
+      MERGEd on (source_system, source_row_id). This is the single table
+      every datamart report reads from.
     columns:
       - name: order_ts
         tests: [not_null]
       - name: gross_amount
+        tests: [not_null]
+      - name: source_updated_at
+        description: Incremental watermark -- see the model's own header comment for what it means per source.
         tests: [not_null]

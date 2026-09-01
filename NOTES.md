@@ -344,6 +344,51 @@ generation time, not re-joined later. Left as-is since correctness of the
 already-generated data isn't in question, just noting the same latent
 ambiguity is there.
 
+## Making fact_sales incremental
+
+Originally a plain `table` materialization -- full rebuild (CTAS + 3 index
+builds) on every `dbt run`. Fine at `small` scale, but that's exactly the
+kind of thing that stops being fine at `large`: proportional-to-data-volume
+work happening on every run regardless of how much actually changed since
+the last one.
+
+Switched to `materialized='incremental'`, `incremental_strategy='merge'`,
+keyed on `(source_system, source_row_id)` -- a composite key, not just
+`source_row_id`, because that column is a per-source surrogate
+(`order_item_id` on the B2B side, `daily_sales.id` -- an identity column --
+on the reseller side) and both start counting from 1, so a plain union
+would let a B2B row and a reseller row collide on the same key.
+
+The harder part was picking the watermark. `fact_sales` didn't carry any
+kind of "when was this last touched" column before, and the two sources
+need different answers:
+
+- B2B: `order_items.updated_at`, newly exposed as `source_updated_at` in
+  `stg_b2b_sales`. This has to be the *item's* `updated_at`, not the
+  order's -- `mutate_b2b.py` flips `orders.order_status` to `REFUNDED`
+  independently of any order_items change, but `order_status` isn't
+  selected into `fact_sales` at all, so an orders-level watermark would
+  pick up churn this model doesn't care about while (more importantly)
+  missing the order_item corrections it does: quantity/gross_amount
+  changes on an existing row need to reach `fact_sales` as a MERGE update,
+  or a correction silently never lands.
+- Reseller: no row-level `updated_at` exists at all, by design --
+  `raw_reseller.daily_sales` rows are never mutated after load, CSV files
+  are immutable external artifacts. `_ingested_at` (when the ingestion
+  pipeline wrote the row) stands in instead. This mirrors the file-identity
+  incrementality `ingest_reseller.py` already uses for the same reason.
+
+Both get exposed as the same output column name (`source_updated_at`) so
+`fact_sales` can filter identically on each side of the union, just against
+a different underlying source column.
+
+Index post-hooks needed no changes -- they're already `IF NOT EXISTS`-
+guarded (see `dbt/macros/create_index.sql`), so on every incremental run
+after the first they're a no-op: the indexes persist on the table across
+MERGEs like any other SQL Server index, there's nothing to rebuild. That
+guard was originally there for a materialization change that hadn't
+happened yet; this is that change.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`

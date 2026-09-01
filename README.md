@@ -139,6 +139,10 @@ python -m dbt.cli.main test
 `dbt-fusion` installed — it registers its own `dbt` command and doesn't
 support the SQL Server adapter.) This builds the staging views, `fact_sales`
 and `dim_resellers` in `dwh`, and the four report tables in `datamart`.
+`fact_sales` is incremental — the first run builds it in full, later runs
+only MERGE in rows that changed since the last one. Run
+`python -m dbt.cli.main run --select fact_sales --full-refresh` if you ever
+need to force a full rebuild (e.g. after resetting the raw tables).
 
 ### 7. Look at the results
 
@@ -207,6 +211,19 @@ read a bounded watermark window and `MERGE` on primary key. CSV files are
 immutable external artifacts with no update timestamp — incrementality
 there is "have I already processed this file," tracked in
 `meta.processed_file`.
+
+**`fact_sales` is itself incremental**, MERGEd on `(source_system,
+source_row_id)` — `source_row_id` alone isn't a global key, since it's a
+per-source surrogate (`order_item_id` on one side, an identity column on
+the other) and both start from 1. Each run only pulls rows past a
+watermark (`source_updated_at`): `order_items.updated_at` on the B2B side,
+so `mutate_b2b.py`'s order corrections land as MERGE updates rather than
+being skipped as already-seen; `daily_sales._ingested_at` on the reseller
+side, since those rows are never mutated after load and load time is the
+closest thing to an update timestamp there. This is a separate layer of
+incrementality from the one above — that's about the raw copy staying in
+sync with the sources, this one is about `fact_sales` staying in sync with
+the raw copy without rescanning it in full on every `dbt run`.
 
 **Bad rows are logged, not written to a reject table.** Every skipped row
 produces one greppable log line (`DATA_ERROR | source=... | reason=... |

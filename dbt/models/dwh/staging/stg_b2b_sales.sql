@@ -19,7 +19,8 @@ select
     oi.gross_amount,
     oi.commission_rate,
     oi.commission_amount,
-    'B2B'                                  as source_system
+    'B2B'                                  as source_system,
+    oi.updated_at                          as source_updated_at
 from {{ source('raw_b2b', 'order_items') }} oi
 join {{ source('raw_b2b', 'orders') }} o on o.order_id = oi.order_id
 join {{ source('raw_b2b', 'events') }} e on e.event_id = oi.event_id
