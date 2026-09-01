@@ -25,4 +25,9 @@ ticketing_dwh:
       trust_cert: false
       threads: 4
       login_timeout: 30
-      query_timeout: 300
+      # fact_sales builds several indexes as post-hooks after its CTAS, each
+      # a full scan/sort over the table -- at `medium`/`large` profile
+      # volume that combined work can run well past a short timeout. 0
+      # disables the ODBC query timeout (pyodbc default) rather than
+      # picking another arbitrary ceiling.
+      query_timeout: 0
