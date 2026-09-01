@@ -9,7 +9,7 @@
 select
     source_row_id,
     seller_type,
-    reseller_id,
+    COALESCE(reseller_id, -1) as reseller_id,
     channel_code,
     order_ts,
     event_type,
