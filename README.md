@@ -1,105 +1,20 @@
 # B2B Event Ticketing — Data Platform
 
-Ingestion foundation for a B2B event-ticketing data platform: two generated
-sources (a SQLite "operational" database and daily reseller CSV exports)
-land in a SQL Server `raw` layer through a Python pipeline that supports
-full and incremental loads, chunking, parallelism, restartability, error
-logging, and processing metadata. `dwh` and `datamart` exist as empty
-schemas plus a dbt skeleton — no dimensional modeling is in scope here (see
-[Scope](#scope-and-known-limitations)).
+A ticketing platform sells directly and through resellers. Some resellers
+are integrated into the platform and place orders through it; others are
+third parties who just send a CSV of what they sold each day. This project
+builds the data foundation to answer four questions about that business:
 
-> **Read this first:** this repository was built in a sandboxed dev
-> environment with **no reachable SQL Server instance and no Microsoft ODBC
-> driver installed**. Phases 1-3 (config, logging, the two generators) were
-> built *and verified by actually running them* here. Everything from
-> Phase 4 on that talks to SQL Server was built to spec, exercised as far as
-> this sandbox allows (see [Verification approach](#verification-approach-in-this-sandbox)),
-> and needs one real run against a live instance to close the loop — the
-> commands below are exactly what to run to do that. Full detail on every
-> verification step taken is in [`NOTES.md`](NOTES.md).
+- How are sales trending by week and by channel?
+- Was February 2020 better than February 2019, broken down by reseller and
+  event type?
+- Does commission paid line up with sales volume?
+- What's the most popular ticket type in each region?
 
-## What this is
-
-A reproducible, from-scratch data platform build: deterministic fake data
-generators stand in for a B2B ticketing platform's operational database and
-its third-party resellers' daily CSV exports, and a Python pipeline loads
-both into a SQL Server `raw` layer with the operational characteristics a
-real ingestion system needs — incrementality, restartability, bounded
-memory, parallelism, and traceable error handling — all driven by config,
-not hardcoded values. Great Expectations validates the result and every run
-is fully auditable from `meta.*` tables, so a reviewer can answer "did this
-work, and how do I know" without reading logs.
-
-## Quick start
-
-**Prerequisites:** a reachable SQL Server instance, ODBC Driver 17 for SQL
-Server, Python 3.11.
-
-### macOS / Linux / WSL / Git Bash
-
-```bash
-cp .env.example .env            # fill in MSSQL_SERVER / credentials
-pip install -r requirements.txt
-make init-db                    # creates the database + all schemas/tables
-make gen-b2b && make gen-files  # generate both sources
-make ingest-full                # load everything into raw
-```
-
-Then verify:
-
-```bash
-make dq                         # Great Expectations against the raw layer
-```
-
-### Windows / PowerShell
-
-`make` isn't a native PowerShell command — the `Makefile` targets are thin
-wrappers around `python -m ...` calls, so run those directly instead. `copy`
-replaces `cp`; everything else is identical:
-
-```powershell
-copy .env.example .env          # fill in MSSQL_SERVER / credentials
-pip install -r requirements.txt
-python -m src.common.init_db                                     # make init-db
-python -m src.generators.generate_b2b                             # make gen-b2b
-python -m src.generators.generate_reseller_files                  # make gen-files
-python -m src.ingestion.runner --mode full --sources b2b,reseller  # make ingest-full
-```
-
-Then verify:
-
-```powershell
-python -m src.quality.run_validations   # make dq
-```
-
-Every other `make <target>` in this README has a direct equivalent:
-
-| `make` target | PowerShell / direct command |
-|---|---|
-| `make init-db` | `python -m src.common.init_db` |
-| `make gen-b2b` | `python -m src.generators.generate_b2b` |
-| `make mutate-b2b` | `python -m src.generators.mutate_b2b` |
-| `make gen-files` | `python -m src.generators.generate_reseller_files` |
-| `make gen-files-delta` | `python -m src.generators.generate_reseller_files --delta` |
-| `make ingest-full` | `python -m src.ingestion.runner --mode full --sources b2b,reseller` |
-| `make ingest-incr` | `python -m src.ingestion.runner --mode incremental --sources b2b,reseller` |
-| `make dq` | `python -m src.quality.run_validations` |
-| `make reset` | `python -m src.common.reset_db` |
-| `make test` | `python -m pytest tests/ -v` |
-
-If you'd rather keep using `make` itself on Windows: install it via
-`choco install make` (admin PowerShell, requires [Chocolatey](https://chocolatey.org/)),
-use Git Bash (ships with Git for Windows, sometimes includes `make`
-depending on install options), or work from inside WSL (`wsl --install`)
-where `make` is native — any of these make the `bash` commands above work
-unmodified.
-
-**Windows-specific gotcha:** `pyodbc` needs the actual **ODBC Driver 17 for
-SQL Server** installed system-wide (a separate Microsoft installer, not the
-`pip install pyodbc` package). If it's missing, `python -c "import pyodbc;
-print(pyodbc.drivers())"` prints `[]` and every command above fails at the
-connection step — install the driver first, per Phase 1's own acceptance
-criterion.
+Two generators stand in for the real sources (an operational SQLite
+database and daily reseller CSV exports), a Python pipeline loads both into
+SQL Server with full and incremental modes, Great Expectations checks the
+result, and dbt turns the raw tables into the four report tables above.
 
 ## Architecture
 
@@ -110,162 +25,199 @@ flowchart LR
         CSV[["Reseller CSVs\ndata/reseller/*.CSV"]]
     end
 
-    subgraph Ingestion["Python ingestion (src/ingestion)"]
-        B2B[ingest_b2b.py\nfull + incremental\nkeyset pagination + MERGE]
-        RESELLER[ingest_reseller.py\nfile-identity incrementality\ncsv-module chunked reads]
-        RUNNER[runner.py\nCLI orchestrator]
+    subgraph Python["Python pipeline (src/)"]
+        B2B[ingest_b2b.py]
+        RESELLER[ingest_reseller.py]
+        RUNNER[runner.py]
     end
 
     subgraph SQLServer["SQL Server"]
         RAWB2B[(raw_b2b.*)]
         RAWRESELLER[(raw_reseller.daily_sales)]
-        DWH[(dwh — empty schema)]
-        DATAMART[(datamart — empty schema)]
+        STG[dwh staging views]
+        FACT[(dwh.fact_sales\ndwh.dim_resellers)]
+        MART[(datamart.*\n4 report tables)]
     end
 
-    META[(meta.*\nrun / job / watermark /\nprocessed_file / dq_result)]
-    GX[[Great Expectations\nsrc/quality]]
+    META[(meta.* — run/job/watermark/dq)]
+    GX[[Great Expectations]]
 
     SQLITE --> B2B --> RAWB2B
     CSV --> RESELLER --> RAWRESELLER
-    RUNNER -.orchestrates.-> B2B
-    RUNNER -.orchestrates.-> RESELLER
-    RUNNER -.orchestrates.-> GX
+    RUNNER -.orchestrates.-> B2B & RESELLER & GX
 
-    B2B -. writes .-> META
-    RESELLER -. writes .-> META
-    GX -. writes .-> META
-    GX -. validates .-> RAWB2B
-    GX -. validates .-> RAWRESELLER
+    RAWB2B --> STG
+    RAWRESELLER --> STG
+    STG --> FACT --> MART
 
-    RAWB2B -.Phase 9: dbt skeleton only, no models.-> DWH
-    RAWRESELLER -.Phase 9: dbt skeleton only, no models.-> DWH
-    DWH -.no models.-> DATAMART
+    B2B & RESELLER & GX -. writes .-> META
+    GX -. validates .-> RAWB2B & RAWRESELLER
 ```
 
-## Requirement traceability
+`raw_b2b` / `raw_reseller` are a faithful, untyped-where-necessary copy of
+the sources. `dwh` conforms the two sources into one grain (`fact_sales`,
+one row per ticket sold) plus a reseller lookup. `datamart` holds exactly
+four tables, one per report above, built on top of `fact_sales`.
 
-| Requirement | Where it lives | How to demonstrate |
+## Running it end to end
+
+**Prerequisites:** SQL Server reachable from your machine, ODBC Driver 17
+for SQL Server, Python 3.11, dbt (`dbt-sqlserver`, installed via
+`requirements.txt`).
+
+### 1. Configure
+
+```powershell
+copy .env.example .env
+pip install -r requirements.txt
+```
+
+Fill in `.env` — server name, database name, and either
+`MSSQL_TRUSTED_CONNECTION=yes` (Windows auth) or a SQL login.
+
+### 2. Create the database and schemas
+
+```powershell
+python -m src.common.init_db
+```
+
+Creates the database if it doesn't exist, then the five schemas
+(`raw_b2b`, `raw_reseller`, `meta`, `dwh`, `datamart`) and every raw/meta
+table. Safe to re-run — it only ever adds what's missing.
+
+### 3. Generate the source data
+
+```powershell
+python -m src.generators.generate_b2b
+python -m src.generators.generate_reseller_files
+```
+
+The first writes `data/source/b2b.db` — deterministic from a fixed seed, so
+re-running it gives you the same data back. The second reads that database
+for the real reseller IDs and writes daily CSV exports for the third-party
+resellers into `data/reseller/`, including a batch of deliberately broken
+rows (bad dates, non-numeric prices, duplicate ticket IDs, wrong column
+counts, one file in Latin-1, one malformed filename) so the ingestion
+error-handling has something to catch.
+
+### 4. Load it into SQL Server
+
+```powershell
+python -m src.ingestion.runner --mode full --sources b2b,reseller
+```
+
+This is the whole ingestion pipeline: keyset-paginated reads from SQLite,
+chunked CSV parsing with per-row validation, parallel workers, and a run
+recorded in `meta.ingestion_run` / `meta.ingestion_job`. It prints a
+summary — rows read/inserted/skipped per table and file, and the final
+status. To pick up new data later without reloading everything:
+
+```powershell
+python -m src.generators.mutate_b2b            # simulates order corrections/refunds
+python -m src.generators.generate_reseller_files --delta   # new daily files
+python -m src.ingestion.runner --mode incremental --sources b2b,reseller
+```
+
+### 5. Validate
+
+```powershell
+python -m src.quality.run_validations
+```
+
+Runs the Great Expectations suites against `raw_b2b` and `raw_reseller` and
+writes the results to `meta.data_quality_result`.
+
+### 6. Build the dbt models
+
+```powershell
+cd dbt
+python -m dbt.cli.main run
+python -m dbt.cli.main test
+```
+
+(Use `python -m dbt.cli.main` rather than a bare `dbt` if you also have
+`dbt-fusion` installed — it registers its own `dbt` command and doesn't
+support the SQL Server adapter.) This builds the staging views, `fact_sales`
+and `dim_resellers` in `dwh`, and the four report tables in `datamart`.
+
+### 7. Look at the results
+
+```sql
+SELECT * FROM datamart.sales_by_week_channel;
+SELECT * FROM datamart.yoy_feb_by_reseller_event_type;
+SELECT * FROM datamart.commission_vs_sales;
+SELECT * FROM datamart.popular_tickets_by_region WHERE rank_in_region = 1;
+```
+
+Or point Power BI (or any BI tool) at the `datamart` schema directly — each
+table is already shaped for its report, no further joins needed.
+
+## Repository layout
+
+```
+config/              generation profiles, ODBC/db settings, the reseller CSV column contract
+sql/                 SQL Server DDL, run in filename order by init_db.py
+src/common/          config loading, logging, db connection/retry, run-control metadata
+src/generators/      the two source generators + the mutation script
+src/ingestion/       ingest_b2b.py, ingest_reseller.py, runner.py (the CLI entry point)
+src/quality/         Great Expectations suites and the runner
+dbt/                 staging → dwh → datamart models
+tests/               pytest suite + two standalone verification SQL scripts
+```
+
+## What each report needs
+
+| Report | Table | Notes |
 |---|---|---|
-| Initial load | `src/ingestion/ingest_b2b.py`, `ingest_reseller.py` (full mode) | `make ingest-full` |
-| Restartable | B2B: watermark checkpoint (`meta.watermark`, advanced only after every chunk commits); reseller: `meta.processed_file` status + delete-and-reload | Kill mid-run, re-run — counts still match, no duplicates (`tests/verification.sql` §5) |
-| Handle erroneous data | Per-row validation, `DATA_ERROR` log lines (`src/common/logging_setup.py::data_error`), `max_skip_ratio` (B2B) | `grep DATA_ERROR logs/*.log \| grep -oP 'reason=\K[a-z_]+' \| sort \| uniq -c` |
-| Processing metadata | `meta.ingestion_run` / `ingestion_job` / `processed_file` / `watermark` | `tests/verification.sql` §2-3, or the runner's own summary output |
-| Readable format for reporting | Typed `raw_b2b.*` (proper DECIMAL/DATETIME2 types); `dbt/models/sources/sources.yml` declares both raw schemas | `tests/verification.sql` §7 (R1-R4) |
-| Large data | Keyset pagination (never OFFSET), chunked CSV reads (bounded memory, `csv` module + manual batching), `fast_executemany=True`, parallel workers | `run.profile: large` in `config.yaml`, `--profile-memory` flag |
-| Incremental load | B2B: `updated_at` watermark, bounded at `high_bound = utcnow()` captured once per job; reseller: file-registry (`meta.processed_file`) | `make ingest-incr` after `make gen-files-delta` + `python -m src.generators.mutate_b2b` — `rows_read` is a small fraction of the full run's (`tests/verification.sql` §4) |
-| Data quality | `src/quality/` — 4 Great Expectations suites (3 from spec + an orphan-check suite, see [NOTES.md](NOTES.md)) | `make dq`; `meta.data_quality_result` |
-| Infrastructure overview | This README; `.env.example` / `config/config.yaml` | — |
+| Sales by week × channel | `datamart.sales_by_week_channel` | one row per (ISO week, channel), plus a per-year breakdown of amount/quantity |
+| Feb 2020 vs. Feb 2019, by reseller/event type | `datamart.yoy_feb_by_reseller_event_type` | 2019 and 2020 as columns on the same row, with a computed delta and % change |
+| Commission rate vs. sales | `datamart.commission_vs_sales` | resolves commission for reseller CSV sales by joining `partnership_agreements` on reseller + sale date, since the CSV itself doesn't carry a rate |
+| Most popular tickets per region | `datamart.popular_tickets_by_region` | ranked per region (`rank_in_region`), not just totals — filter to `rank_in_region = 1` for "the" most popular |
 
-## Design decisions and trade-offs
+## Why it's built this way
 
-- **The reseller raw layer is all-`NVARCHAR(255)`.** Files land as text,
-  unmodified; typing and cleansing are a `dwh` concern (out of scope here).
-  This keeps `raw_reseller.daily_sales` a faithful, lossless copy of
-  whatever a reseller actually sent — including the malformed rows — so a
-  reviewer can always see the original value next to why it was rejected.
-- **File identity, not `updated_at`, drives reseller incrementality.**
-  CSV exports are immutable external artifacts with no update timestamp;
-  "have I already processed this file?" (`meta.processed_file`, keyed on
-  file name) is the only sound definition of "new work" for a file-based
-  source. See NOTES.md for the corollary limitation: a same-named corrected
-  redelivery is invisible unless `detect_changed_files: true`.
-- **`commission_rate` is snapshotted onto `order_items` at sale time**,
-  copied from whichever `partnership_agreements` row was valid on the order
-  date, rather than resolved by a join at query time. Agreements change
-  rates over time; a join-at-query-time design would silently rewrite
-  historical commission history every time a rate changes. This is also
-  exactly why R3 (commission rate vs. sales) is trivially answerable
-  straight from `raw_b2b.order_items` for B2B-platform sales.
-- **Keyset pagination, never `OFFSET`.** `WHERE pk > :last_pk ORDER BY pk
-  LIMIT :n` costs the same at row 5,000,000 as at row 0; `OFFSET 5000000`
-  forces the engine to scan and discard five million rows first. This
-  matters as soon as the `large` profile (5M+ `order_items`) is in play.
-- **The incremental watermark is bounded.** `high_bound = utcnow()` is
-  captured once at job start, and the read window is `updated_at > wm AND
-  updated_at <= high_bound`. An unbounded `updated_at > wm` would permanently
-  lose any row written concurrently with the job (it would never fall after
-  a watermark that keeps moving past it). The watermark only advances to
-  `high_bound` after every chunk of the job has committed, so a crash
-  mid-job just re-reads the same bounded window next time — safe, because
-  the `MERGE` on primary key is idempotent.
-- **Errors go to the log, not a reject table.** Every skipped row is logged
-  in one greppable shape (`DATA_ERROR | source=... | row=... | reason=... |
-  detail=... | payload=...`) with enough detail to find the exact source
-  row. No reject-table schema to design or keep in sync, at the cost of
-  needing to grep logs rather than query SQL for historical rejects — an
-  explicit, spec-directed trade-off (see NOTES.md "Known limitations" for
-  what a production system would add here).
-- **`RECOVERY SIMPLE` on the target database.** This is a load-heavy
-  development database with a fully reproducible source (the generators
-  regenerate it from a fixed seed). Bulk-loading millions of rows under the
-  default `FULL` recovery model grows the transaction log until disk fills;
-  `SIMPLE` truncates the log at each checkpoint, and point-in-time recovery
-  buys nothing here.
-- **Pre-sized data/log files with fixed-MB growth.** SQL Server's defaults
-  (8MB data, 64MB log, percentage growth) trigger hundreds of autogrow
-  events during a large load, each one a pause, and fragment the files.
-  Pre-allocating and growing in fixed chunks (`config.yaml: database.*`)
-  avoids both.
-- **`READ_COMMITTED_SNAPSHOT ON`.** Ingestion workers write while Great
-  Expectations reads, potentially concurrently. Snapshot isolation lets
-  readers avoid blocking on writers instead of taking shared locks.
+**`organizer_id`/`customer_id` don't exist anywhere in the schema.**
+Neither is read by any of the four reports — not even as a grouping key —
+so they were cut entirely rather than left in as unused columns. The one
+place this actually changes the data model: `fact_sales` unions the B2B and
+reseller sources, and about 40% of resellers are third-party — they only
+ever appear in `raw_reseller.daily_sales`, never in `raw_b2b.orders` — so a
+fact table built off the B2B side alone would silently miss almost half of
+reseller activity.
 
-## Verification approach in this sandbox
+**Commission rate is resolved once, not joined at query time.** On the B2B
+side it's baked into `order_items` at the moment of sale, copied from
+whichever `partnership_agreements` row was valid on that date — so a later
+rate change doesn't rewrite history. The reseller CSV doesn't carry a
+commission rate at all, so `stg_reseller_sales` resolves it the same way,
+matching `(reseller_id, sale_date)` against the agreement's validity
+window.
 
-No SQL Server instance or ODBC driver was reachable while building this
-(`pyodbc.drivers()` returns `[]`; verified and reported immediately per
-Phase 1's own acceptance criterion, rather than silently working around it).
-Given that constraint, verification split into what could and couldn't run
-directly:
+**No dbt snapshot in the model set.** `venues.region` is the one dimension
+attribute where a snapshot would matter in principle (it's what
+`popular_tickets_by_region` groups by), but nothing in this pipeline ever
+updates a venue after it's created — `mutate_b2b.py` only touches orders —
+so a real snapshot would just be a table that never captures any history.
+`dbt/snapshots/` keeps one example for the pattern, intentionally not
+wired up.
 
-- **Ran for real:** both generators (`make gen-b2b`, `make gen-files`,
-  `make gen-files-delta`, `python -m src.generators.mutate_b2b`), producing
-  the actual `data/source/b2b.db` and `data/reseller/*.CSV` this repo ships
-  with; `tests/source_report_smoke.sql` against that SQLite DB (R1-R4 all
-  answer correctly); every row-conversion, chunk-pagination, and
-  defect-detection code path in `ingest_b2b.py`/`ingest_reseller.py` against
-  that same real data (`tests/test_ingest_*.py`); the full Great
-  Expectations checkpoint-to-result pipeline against a scratch SQLite
-  database standing in for SQL Server, with injected violations (negative
-  amount, an orphaned order_item, a duplicate file/row) correctly caught;
-  `dbt parse` against the dbt skeleton (`dbt debug`'s config-validation
-  half also passed — only the live connection test couldn't run).
-- **Built to spec, not executed here:** the DDL in `sql/*.sql`,
-  `src/common/metadata.py`'s SQL Server-specific `MERGE`/`OUTPUT $action`
-  statements, and `runner.py`'s end-to-end orchestration. These are
-  standard, carefully-checked SQLAlchemy 2.x / pyodbc 5.x / T-SQL, but a
-  live run is the only way to be certain. `tests/verification.sql` and the
-  Quick Start commands above are exactly what to run to do that.
+**Incrementality works differently on each side**, because the two sources
+are different in kind. B2B rows have `updated_at`, so incremental loads
+read a bounded watermark window and `MERGE` on primary key. CSV files are
+immutable external artifacts with no update timestamp — incrementality
+there is "have I already processed this file," tracked in
+`meta.processed_file`.
 
-Full detail, including every interactive API check performed, is in
-[`NOTES.md`](NOTES.md).
+**Bad rows are logged, not written to a reject table.** Every skipped row
+produces one greppable log line (`DATA_ERROR | source=... | reason=... |
+detail=...`) with enough detail to trace back to the exact source row.
 
-## Scope and known limitations
+## Known limitations
 
-**In scope:** both generators; SQL Server `raw` layer (`raw_b2b`,
-`raw_reseller`, `meta`); full + incremental ingestion with chunking,
-parallelism, restartability, error logging, processing metadata; Great
-Expectations validation. **Out of scope:** `dwh`/`datamart` are empty
-schemas with a dbt skeleton (`dbt/`) — no models, no dimensional modeling,
-no dashboards.
-
-What a production version would add:
-- **An orchestrator** (Airflow/Dagster/similar) instead of `make` targets
-  and a CLI — retries, alerting, dependency graphs across the load_order,
-  and a real schedule instead of manual invocation.
-- **A secrets manager** instead of `.env` — credentials in a vault/KMS with
-  rotation, not a plaintext file (even a gitignored one).
-- **CDC** on the source OLTP system instead of `updated_at` polling, once
-  the source is a real production database rather than a generator-owned
-  SQLite file this pipeline fully controls.
-- **Reject persistence** — a queryable reject table/log sink (e.g. shipped
-  to a log platform with SQL-like querying) instead of grepping rotating
-  log files, once reject volume or audit requirements outgrow "grep the log."
-- **Same-name file redelivery detection on by default** — `detect_changed_files`
-  exists (`config.yaml`) but defaults off; a production reseller feed would
-  need a real answer for "they resent today's file with a fix," not just a
-  config flag.
-- **Alerting** on `meta.ingestion_run.status IN ('PARTIAL','FAILED')` and on
-  `meta.data_quality_result` CRITICAL failures, instead of relying on
-  someone reading the runner's exit code or querying `meta.*` by hand.
+- No orchestrator — `runner.py` is invoked manually or on a cron, there's
+  no retry/alerting layer around it.
+- Reseller file redelivery under the same filename is invisible unless
+  `detect_changed_files` is turned on in `config.yaml` (off by default).
+- The Power BI dashboard is built manually against the `datamart` tables —
+  it isn't part of this repo, since a `.pbix` is a binary Power BI Desktop
+  format with nothing to version-control here.
