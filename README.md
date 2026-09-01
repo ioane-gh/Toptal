@@ -169,7 +169,7 @@ tests/               pytest suite + two standalone verification SQL scripts
 
 | Report | Table | Notes |
 |---|---|---|
-| Sales by week × channel | `datamart.sales_by_week_channel` | one row per (ISO week, channel), plus a per-year breakdown of amount/quantity |
+| Sales by week × channel | `datamart.sales_by_week_channel` | one row per (year, ISO week, channel) |
 | Feb 2020 vs. Feb 2019, by reseller/event type | `datamart.yoy_feb_by_reseller_event_type` | 2019 and 2020 as columns on the same row, with a computed delta and % change |
 | Commission rate vs. sales | `datamart.commission_vs_sales` | resolves commission for reseller CSV sales by joining `partnership_agreements` on reseller + sale date, since the CSV itself doesn't carry a rate |
 | Most popular tickets per region | `datamart.popular_tickets_by_region` | ranked per region (`rank_in_region`), not just totals — filter to `rank_in_region = 1` for "the" most popular |
