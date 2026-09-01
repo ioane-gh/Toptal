@@ -8,6 +8,15 @@
 -- NOTES.md's join path -- so they're resolved here by matching
 -- (reseller_id, sale_date) against partnership_agreements' validity window,
 -- the same rate history the B2B side already has baked into order_items.
+--
+-- The generator chains consecutive agreement periods so one period's
+-- valid_to equals the next period's valid_from -- the same date value ends
+-- one period and starts the next. An inclusive-inclusive join
+-- (valid_from <= date <= valid_to) matches BOTH periods on that boundary
+-- date and fans a row out into two. Fixed with a half-open interval
+-- (valid_to exclusive -- the new period owns the boundary date) plus
+-- OUTER APPLY ... TOP 1 so a match is structurally guaranteed to be at
+-- most one row, not just correct for the cases already reasoned about.
 
 select
     ds.id                                              as source_row_id,
@@ -24,7 +33,11 @@ select
     CAST(ds.total_amount as decimal(18,4)) * COALESCE(pa.commission_rate, 0) as commission_amount,
     'RESELLER'                                         as source_system
 from {{ source('raw_reseller', 'daily_sales') }} ds
-left join {{ source('raw_b2b', 'partnership_agreements') }} pa
-    on pa.reseller_id = CAST(ds.reseller_id as int)
-    and CAST(ds.sale_date as date) >= pa.valid_from
-    and (pa.valid_to is null or CAST(ds.sale_date as date) <= pa.valid_to)
+outer apply (
+    select top 1 a.commission_rate
+    from {{ source('raw_b2b', 'partnership_agreements') }} a
+    where a.reseller_id = CAST(ds.reseller_id as int)
+      and a.valid_from <= CAST(ds.sale_date as date)
+      and (a.valid_to is null or CAST(ds.sale_date as date) < a.valid_to)
+    order by a.valid_from desc
+) pa

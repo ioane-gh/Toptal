@@ -318,6 +318,32 @@ cross-checked against `config/reseller_file_schema.yaml`'s `target_column`
 values directly, not just inferred, since a typo there wouldn't surface
 until an actual run against a live database.
 
+## Fixing a real bug: stg_reseller_sales duplicate keys
+
+First live `dbt test` run against a real, fully loaded database (caught only
+once actually run -- `dbt compile`/`dbt parse` can't catch this, they don't
+execute against real data) found `unique_stg_reseller_sales_source_row_id`
+failing with 99 duplicates. Root cause: `stg_reseller_sales.sql`'s join to
+`partnership_agreements` was inclusive on both ends
+(`valid_from <= date <= valid_to`), but `generate_b2b.py` chains consecutive
+agreement periods so one period's `valid_to` equals the next period's
+`valid_from` -- the same date value. A sale on that exact boundary date
+matched both periods, fanning the row out into two. Fixed with a half-open
+interval (`valid_to` exclusive, so the newer period owns the boundary date)
+plus `OUTER APPLY ... TOP 1` instead of a plain `LEFT JOIN`, so a match is
+structurally capped at one row regardless of whether some other edge case
+in the data would otherwise produce an overlap.
+
+Note this same inclusive-inclusive ambiguity exists in the original
+Python `commission_rate_for()` (`src/generators/generate_b2b.py`,
+`src/generators/mutate_b2b.py`) too -- it resolves it silently via list
+iteration order (first match wins) rather than a real half-open interval.
+That's never surfaced as a bug because it's deterministic there and the
+resulting `commission_rate` gets baked into `order_items` once at
+generation time, not re-joined later. Left as-is since correctness of the
+already-generated data isn't in question, just noting the same latent
+ambiguity is there.
+
 ## Other decisions
 
 - Money fields use `decimal.Decimal` throughout Python and `DECIMAL(18,4)`
