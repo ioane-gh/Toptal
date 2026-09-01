@@ -5,6 +5,21 @@
 -- slice from every report that groups by reseller or region. No dedup
 -- needed -- a given reseller's sales come from exactly one source, never
 -- both, by construction.
+--
+-- Indexed on every column a datamart model filters/joins/groups by --
+-- this is the table that actually gets large (millions of rows at the
+-- `large` profile), everything downstream of it is a small pre-aggregated
+-- result set where an index barely matters.
+
+{{
+    config(
+        post_hook=[
+            create_index('IX_fact_sales_reseller_id', 'reseller_id'),
+            create_index('IX_fact_sales_order_ts', 'order_ts'),
+            create_index('IX_fact_sales_region', 'region')
+        ]
+    )
+}}
 
 select
     source_row_id,

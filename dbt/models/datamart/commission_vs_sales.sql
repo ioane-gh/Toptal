@@ -1,4 +1,12 @@
 -- R3: commission rate vs. sales results, per reseller.
+--
+-- Small pre-aggregated result set, one index on reseller_id is enough here.
+
+{{
+    config(
+        post_hook=[create_index('IX_commission_vs_sales_reseller_id', 'reseller_id')]
+    )
+}}
 
 select
     f.reseller_id,

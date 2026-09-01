@@ -4,6 +4,15 @@
 -- as columns on the same (event_type, reseller_id) row instead of as
 -- separate rows -- a consumer shouldn't have to pivot or self-join this
 -- table just to answer the question the report exists to answer.
+--
+-- Small pre-aggregated result set, one index on the grouping column
+-- reports filter by most (reseller_id) is enough here.
+
+{{
+    config(
+        post_hook=[create_index('IX_yoy_feb_by_reseller_event_type_reseller_id', 'reseller_id')]
+    )
+}}
 
 with feb_sales as (
     select
